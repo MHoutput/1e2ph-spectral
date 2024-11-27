@@ -816,10 +816,10 @@ class PhonopyCalculation:
         if save_filename is not None:
             if save_bbox_extents is None:
                 save_bbox = "tight"
-                fig.savefig(save_filename, bbox_inches=save_bbox)
+                fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
             else:
                 save_bbox = matplotlib.transforms.Bbox(save_bbox_extents)
-                fig.savefig(save_filename, bbox_inches=save_bbox)
+                fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
                 xy = save_bbox_extents[0]
                 width = save_bbox_extents[1][0]-xy[0]
                 height = save_bbox_extents[1][1]-xy[1]
@@ -883,7 +883,8 @@ class PhonopyBandCalculation(PhonopyCalculation):
                 
         return xaxis_ticks, xaxis_labels
     
-    def plot(self, unit="THz", title="Phonon dispersion", save_filename=None, text_sizes=(13, 15, 16)):
+    def plot(self, unit="THz", title="Phonon dispersion", save_filename=None, 
+             text_sizes=(13, 15, 16), plot_range=None):
         # Plot the band structure in a figure
         plot_color = "blue"
         plot_linestyle = "solid"
@@ -902,12 +903,19 @@ class PhonopyBandCalculation(PhonopyCalculation):
         ax.tick_params(axis='both', labelsize=text_sizes[0])
         ax.set_xlim(np.min(qs),np.max(qs))
         
-        # Find a plot range for the y-axis
-        omega_min = np.min(omegas)
-        omega_max = np.max(omegas)
-        rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
-        omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-        omega_max_scale = np.ceil(omega_max/rounding_scale)*rounding_scale
+        if plot_range is None:
+            omega_min = np.min(omegas)
+            omega_max = np.max(omegas)
+            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+                # Include the unstable phonon modes in the plot
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
+            else:
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
+        else:
+            omega_min_scale = plot_range[0]
+            omega_max_scale = plot_range[1]
         ax.set_ylim(omega_min_scale, omega_max_scale)
         
         # Plot major axis ticks
@@ -917,7 +925,7 @@ class PhonopyBandCalculation(PhonopyCalculation):
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
-            plt.savefig(save_filename)
+            plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
 
 class PhonopyCommensurateCalculation(PhonopyCalculation):
@@ -1346,7 +1354,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         fig.tight_layout()    
         fig.show()
         if save_filename is not None:
-            plt.savefig(save_filename)
+            plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
     
     def plot_LATO_weights(self, path, path_labels, npoints=51, include_nac="None", unit="THz", title="LATO weights", 

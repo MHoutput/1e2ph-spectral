@@ -64,7 +64,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename = plots_folder+"FCC1BZ_high.pdf"
+save_filename = plots_folder+"FCC1BZ_high"
 view_angles = (18, 26, 0)
 save_bbox = [[1.8, 0.9], [4.7, 4.5]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -105,7 +105,7 @@ quiver_plot[3, :, 0] = 0.5*np.array([1.0,1.0,0.0])
 quiver_plot[3, :, 1] = 0.2*np.array([1.0,1.0,0.0])
 quiver_plot[3, :, 2] = 0.75*np.array([1.0,1.0,0.0])
 
-save_filename =  plots_folder+"FCC1BZ_low.pdf"
+save_filename =  plots_folder+"FCC1BZ_low"
 view_angles = (18, 26, 0)
 save_bbox = [[1.8, 0.9], [4.7, 4.5]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -157,7 +157,7 @@ calc = PhonopyCommensurateCalculation(data_folder+"/LiF_a4.004_E0.0_super666.yam
 path, path_labels = get_path_and_labels("FCC", False)
 path_low, path_labels_low = get_path_and_labels("FCC", True)
 calc.plot_bands(path, path_labels, npoints=101, include_nac="Gonze", plot_range=(0,20), title="LiF phonon bands", 
-                save_filename=plots_folder+"LiF_phonons_a4.004_super666.pdf", text_sizes=text_sizes)
+                save_filename=plots_folder+"LiF_phonons_a4.004_super666", text_sizes=text_sizes)
 calc.plot_LATO_weights(path_low, path_labels_low, npoints=101, num_markers=151, include_nac="Gonze", plot_range=(0,20), 
                        save_filename=plots_folder+"LiF_phonons_a4.004_super666", subplots=False, text_sizes=text_sizes)
 
@@ -250,7 +250,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename =  plots_folder+"CUB1BZ_high.pdf"
+save_filename =  plots_folder+"CUB1BZ_high"
 view_angles = (18, 26, 0)
 save_bbox = [[1.5, 0.6], [5.15, 4.65]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -283,7 +283,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename = plots_folder+"CUB1BZ_low.pdf"
+save_filename = plots_folder+"CUB1BZ_low"
 view_angles = (18, 26, 0)
 save_bbox = [[1.5, 0.6], [5.15, 4.65]]
 
