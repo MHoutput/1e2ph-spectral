@@ -39,6 +39,19 @@ def read_filename(name):
 plots_folder = "plots/"
 text_sizes=(15, 16, 18)
 
+colors = [
+    (0.4, 0.1, 0.1),
+    (0.4, 0.4, 1.0),
+    (0.2, 0.2, 0.2),
+    (0.8, 0.3, 0.8),
+    (0.1, 0.3, 0.1),
+    (0.7, 0.7, 0.2),
+    (0.1, 0.3, 0.4),
+    (0.9, 0.3, 0.3),
+    (0.1, 0.1, 0.4),
+    (0.2, 0.7, 0.2)
+]
+
 #%% Plot of the FCC Brillouin zone with high-symmetry path
 
 data_folder = "data/LiF/stability"
@@ -208,7 +221,8 @@ for index1 in range(0, num_partials):
         count += 1
 
 fig, ax = plt.subplots()
-plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
+plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                            colors=colors)
 plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
 plot_handles.append(plot_handle_total)
 
@@ -340,7 +354,8 @@ for index1 in range(0, num_partials):
         count += 1
 
 fig, ax = plt.subplots()
-plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
+plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                            colors=colors)
 plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
 plot_handles.append(plot_handle_total)
 

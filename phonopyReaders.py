@@ -1581,7 +1581,7 @@ class YCalculation():
     def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None, sigma_factor=0.01,
                          omega=None, num_omegas=1001, moments=None, moments_scaling_frequency=None, q_split_levels=0, 
                          parallel_jobs=1, savedata_filename=None, savefigures_filename=None, text_sizes=(13, 15, 16), 
-                         title=None):
+                         title=None, colors=None):
         # Calculate T(omega) with the smearing method and interpolation for Y, at temperature zero
         
 
@@ -1682,6 +1682,19 @@ class YCalculation():
         # Plot figures of the different resolutions, except the case of no resolution:
         labels_list = [ ["TA", "LA", "TO", "LO"], ["T", "L"], ["A", "O"] ]
         label_names = ["LATO", "LT", "AO"]
+        if colors is None:
+            colors = [
+                (0.4, 0.1, 0.1),
+                (0.4, 0.4, 1.0),
+                (0.2, 0.2, 0.2),
+                (0.8, 0.3, 0.8),
+                (0.1, 0.3, 0.1),
+                (0.7, 0.7, 0.2),
+                (0.1, 0.3, 0.4),
+                (0.9, 0.3, 0.3),
+                (0.1, 0.1, 0.4),
+                (0.2, 0.7, 0.2)
+            ]
         for labels, name,  partials, Tomega_res in zip(labels_list, label_names, partials_list[:-1], Tomega_resolutions):
             num_partials = len(partials)
             num_contributions = int(num_partials*(num_partials+1)/2)
@@ -1698,7 +1711,8 @@ class YCalculation():
                     count += 1
             
             fig, ax = plt.subplots()
-            plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
+            plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                                        colors=colors)
             plot_handle_total, = ax.plot(omega, Tomega, color="black", label="Total")
             plot_handles.append(plot_handle_total)
             
