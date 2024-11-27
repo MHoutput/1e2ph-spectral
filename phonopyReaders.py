@@ -53,6 +53,43 @@ def get_modular_indices(number, mod_list):
         new_list = mod_list[0:-1]
         return np.append(get_modular_indices(number % mod, new_list), 
                          number // mod)
+    
+def round_plot_range(ymin, ymax, clamp_min=None, clamp_max=None, targets=None):
+    """ Returns rounded plot limits based on min and max of data"""
+    
+    if targets is None:
+        targets = [0.0, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 
+                   3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    ceil_to = lambda x: targets[np.nonzero(targets > x)[0][0]]
+
+    if clamp_min is not None:
+        ymin_rounded = clamp_min
+        if clamp_max is not None:
+            ymax_rounded = clamp_max
+        else:
+            # ymax > clamp_min
+            rounding_scale = 10**np.floor(np.log10(ymax-clamp_min))
+            ymax_rounded = clamp_min+ceil_to((ymax-clamp_min)/rounding_scale)\
+                *rounding_scale
+    else:
+        if clamp_max is not None:
+            # ymin < clamp_max
+            ymax_rounded = clamp_max
+            rounding_scale = 10**np.floor(np.log10(clamp_max-ymin))
+            ymin_rounded = clamp_max-ceil_to((clamp_max-ymin)/rounding_scale)\
+                *rounding_scale
+        else:
+            # ymax > ymin
+            scale_avg = 10**np.floor(np.log10(ymax-ymin))
+            avg = 0.5*(ymin+ymax)
+            avg_round = round(avg/scale_avg)*scale_avg
+            scale_min = 10**np.floor(np.log10(avg_round-ymin))
+            ymin_rounded = avg_round-ceil_to((avg_round-ymin)/scale_min)\
+                *scale_min
+            scale_max = 10**np.floor(np.log10(ymax-avg_round))
+            ymax_rounded = avg_round+ceil_to((ymax-avg_round)/scale_max)\
+                *scale_max
+    return ymin_rounded, ymax_rounded
 
 
 class PhonopyCalculation:
@@ -1281,20 +1318,15 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         ax.set_xlim(np.min(distances),np.max(distances))
         
         if plot_range is None:
-            target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-            # Round up to closest value in the above list
-            ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-            
-            # Find a nice plot range for the y-axis
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
             if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                 # Include the unstable phonon modes in the plot
-                omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
             else:
-                omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-            omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
         else:
             omega_min_scale = plot_range[0]
             omega_max_scale = plot_range[1]
@@ -1392,20 +1424,15 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             ax.set_xlim(np.min(distances),np.max(distances))
             
             if plot_range is None:
-                target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-                # Round up to closest value in the above list
-                ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-                
-                # Find a nice plot range for the y-axis
                 omega_min = np.min(omegas)
                 omega_max = np.max(omegas)
-                rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
                 if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                     # Include the unstable phonon modes in the plot
-                    omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                    omega_min_scale, omega_max_scale = \
+                        round_plot_range(omega_min, omega_max)
                 else:
-                    omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-                omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                    omega_min_scale, omega_max_scale = \
+                        round_plot_range(omega_min, omega_max, clamp_min=0)
             else:
                 omega_min_scale = plot_range[0]
                 omega_max_scale = plot_range[1]
@@ -1809,23 +1836,19 @@ class YCalculation():
         plot_handles = []
         
         if plot_range is None:
-            target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-            # Round up to closest value in the above list
-            ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-            
-            # Find a nice plot range for the y-axis
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
-            if omega_min < -self.zerocalc.convert_units(0.1, from_unit="THz", to_unit=unit):
+            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                 # Include the unstable phonon modes in the plot
-                omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
             else:
-                omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-            omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
         else:
             omega_min_scale = plot_range[0]
             omega_max_scale = plot_range[1]
+        ax.set_ylim(omega_min_scale, omega_max_scale)
         
         for index, ax in enumerate(ax_handles):
             marker_sizes = marker_max_radius**2*Ys2_perm[:,index,:]

@@ -12,7 +12,8 @@ import os
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from phonopyReaders import PhonopyCommensurateCalculation, YCalculation
+from phonopyReaders import PhonopyCommensurateCalculation, YCalculation, \
+    round_plot_range
 from pathsLabels import get_path_and_labels
 
 mpl.rcParams['font.family'] = 'serif'
@@ -133,13 +134,8 @@ for index, supercell_size in enumerate(supercell_sizes):
     plot_handles.append(plot_handle)
     print("Moments of T(omega) for "+supercell_string+":")
     print(data['Tmoments'])
-    
-    
-# Find a decent upper bound for the y-axis
-target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-rounding_scale = 10**np.floor(np.log10(abs(Tomega_max)))
-Tomega_max_scale = ceil_to(Tomega_max/rounding_scale)*rounding_scale
+
+_, Tomega_max_scale = round_plot_range(0, Tomega_max, clamp_min = 0)
     
 ax.set_title("", size=text_sizes[2])
 ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
