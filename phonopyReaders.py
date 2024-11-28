@@ -53,6 +53,43 @@ def get_modular_indices(number, mod_list):
         new_list = mod_list[0:-1]
         return np.append(get_modular_indices(number % mod, new_list), 
                          number // mod)
+    
+def round_plot_range(ymin, ymax, clamp_min=None, clamp_max=None, targets=None):
+    """ Returns rounded plot limits based on min and max of data"""
+    
+    if targets is None:
+        targets = [0.0, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 
+                   3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    ceil_to = lambda x: targets[np.nonzero(targets > x)[0][0]]
+
+    if clamp_min is not None:
+        ymin_rounded = clamp_min
+        if clamp_max is not None:
+            ymax_rounded = clamp_max
+        else:
+            # ymax > clamp_min
+            rounding_scale = 10**np.floor(np.log10(ymax-clamp_min))
+            ymax_rounded = clamp_min+ceil_to((ymax-clamp_min)/rounding_scale)\
+                *rounding_scale
+    else:
+        if clamp_max is not None:
+            # ymin < clamp_max
+            ymax_rounded = clamp_max
+            rounding_scale = 10**np.floor(np.log10(clamp_max-ymin))
+            ymin_rounded = clamp_max-ceil_to((clamp_max-ymin)/rounding_scale)\
+                *rounding_scale
+        else:
+            # ymax > ymin
+            scale_avg = 10**np.floor(np.log10(ymax-ymin))
+            avg = 0.5*(ymin+ymax)
+            avg_round = round(avg/scale_avg)*scale_avg
+            scale_min = 10**np.floor(np.log10(avg_round-ymin))
+            ymin_rounded = avg_round-ceil_to((avg_round-ymin)/scale_min)\
+                *scale_min
+            scale_max = 10**np.floor(np.log10(ymax-avg_round))
+            ymax_rounded = avg_round+ceil_to((ymax-avg_round)/scale_max)\
+                *scale_max
+    return ymin_rounded, ymax_rounded
 
 
 class PhonopyCalculation:
@@ -779,10 +816,10 @@ class PhonopyCalculation:
         if save_filename is not None:
             if save_bbox_extents is None:
                 save_bbox = "tight"
-                fig.savefig(save_filename, bbox_inches=save_bbox)
+                fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
             else:
                 save_bbox = matplotlib.transforms.Bbox(save_bbox_extents)
-                fig.savefig(save_filename, bbox_inches=save_bbox)
+                fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
                 xy = save_bbox_extents[0]
                 width = save_bbox_extents[1][0]-xy[0]
                 height = save_bbox_extents[1][1]-xy[1]
@@ -846,7 +883,8 @@ class PhonopyBandCalculation(PhonopyCalculation):
                 
         return xaxis_ticks, xaxis_labels
     
-    def plot(self, unit="THz", title="Phonon dispersion", save_filename=None, text_sizes=(13, 15, 16)):
+    def plot(self, unit="THz", title="Phonon dispersion", save_filename=None, 
+             text_sizes=(13, 15, 16), plot_range=None):
         # Plot the band structure in a figure
         plot_color = "blue"
         plot_linestyle = "solid"
@@ -865,12 +903,19 @@ class PhonopyBandCalculation(PhonopyCalculation):
         ax.tick_params(axis='both', labelsize=text_sizes[0])
         ax.set_xlim(np.min(qs),np.max(qs))
         
-        # Find a plot range for the y-axis
-        omega_min = np.min(omegas)
-        omega_max = np.max(omegas)
-        rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
-        omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-        omega_max_scale = np.ceil(omega_max/rounding_scale)*rounding_scale
+        if plot_range is None:
+            omega_min = np.min(omegas)
+            omega_max = np.max(omegas)
+            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+                # Include the unstable phonon modes in the plot
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
+            else:
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
+        else:
+            omega_min_scale = plot_range[0]
+            omega_max_scale = plot_range[1]
         ax.set_ylim(omega_min_scale, omega_max_scale)
         
         # Plot major axis ticks
@@ -880,7 +925,7 @@ class PhonopyBandCalculation(PhonopyCalculation):
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
-            plt.savefig(save_filename)
+            plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
 
 class PhonopyCommensurateCalculation(PhonopyCalculation):
@@ -1281,20 +1326,15 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         ax.set_xlim(np.min(distances),np.max(distances))
         
         if plot_range is None:
-            target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-            # Round up to closest value in the above list
-            ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-            
-            # Find a nice plot range for the y-axis
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
             if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                 # Include the unstable phonon modes in the plot
-                omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
             else:
-                omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-            omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
         else:
             omega_min_scale = plot_range[0]
             omega_max_scale = plot_range[1]
@@ -1314,7 +1354,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         fig.tight_layout()    
         fig.show()
         if save_filename is not None:
-            plt.savefig(save_filename)
+            plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
     
     def plot_LATO_weights(self, path, path_labels, npoints=51, include_nac="None", unit="THz", title="LATO weights", 
@@ -1392,20 +1432,15 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             ax.set_xlim(np.min(distances),np.max(distances))
             
             if plot_range is None:
-                target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-                # Round up to closest value in the above list
-                ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-                
-                # Find a nice plot range for the y-axis
                 omega_min = np.min(omegas)
                 omega_max = np.max(omegas)
-                rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
                 if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                     # Include the unstable phonon modes in the plot
-                    omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                    omega_min_scale, omega_max_scale = \
+                        round_plot_range(omega_min, omega_max)
                 else:
-                    omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-                omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                    omega_min_scale, omega_max_scale = \
+                        round_plot_range(omega_min, omega_max, clamp_min=0)
             else:
                 omega_min_scale = plot_range[0]
                 omega_max_scale = plot_range[1]
@@ -1545,8 +1580,8 @@ class YCalculation():
     
     def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None, sigma_factor=0.01,
                          omega=None, num_omegas=1001, moments=None, moments_scaling_frequency=None, q_split_levels=0, 
-                         parallel_jobs=1, savedata_filename=None, savefigures_filename=None, text_sizes=(13, 15, 16), 
-                         title=None):
+                         parallel_jobs=1, savedata_filename=None, savetxt_filename=None, savefigures_filename=None, 
+                         text_sizes=(13, 15, 16), title=None, colors=None, ):
         # Calculate T(omega) with the smearing method and interpolation for Y, at temperature zero
         
 
@@ -1647,6 +1682,19 @@ class YCalculation():
         # Plot figures of the different resolutions, except the case of no resolution:
         labels_list = [ ["TA", "LA", "TO", "LO"], ["T", "L"], ["A", "O"] ]
         label_names = ["LATO", "LT", "AO"]
+        if colors is None:
+            colors = [
+                (0.4, 0.1, 0.1),
+                (0.4, 0.4, 1.0),
+                (0.2, 0.2, 0.2),
+                (0.8, 0.3, 0.8),
+                (0.1, 0.3, 0.1),
+                (0.7, 0.7, 0.2),
+                (0.1, 0.3, 0.4),
+                (0.9, 0.3, 0.3),
+                (0.1, 0.1, 0.4),
+                (0.2, 0.7, 0.2)
+            ]
         for labels, name,  partials, Tomega_res in zip(labels_list, label_names, partials_list[:-1], Tomega_resolutions):
             num_partials = len(partials)
             num_contributions = int(num_partials*(num_partials+1)/2)
@@ -1662,8 +1710,25 @@ class YCalculation():
                     contribution_labels.append(labels[index1]+"-"+labels[index2])
                     count += 1
             
+            if name=="LATO" and savetxt_filename is not None:
+                full_data_array = np.transpose(np.append(np.array([omega, Tomega]), T_contributions, axis=0))
+                np.savetxt(savetxt_filename+".txt", full_data_array,
+                        header="  Frequency (THz)      "+\
+                                "    T(omega), total      "+\
+                                "    T(omega), TA-TA      "+\
+                                "    T(omega), TA-LA      "+\
+                                "    T(omega), TA-TO      "+\
+                                "    T(omega), TA-LO      "+\
+                                "    T(omega), LA-LA      "+\
+                                "    T(omega), LA-TO      "+\
+                                "    T(omega), LA-LO      "+\
+                                "    T(omega), TO-TO      "+\
+                                "    T(omega), TO-LO      "+\
+                                "    T(omega), LO-LO      ")
+            
             fig, ax = plt.subplots()
-            plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
+            plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                                        colors=colors)
             plot_handle_total, = ax.plot(omega, Tomega, color="black", label="Total")
             plot_handles.append(plot_handle_total)
             
@@ -1809,23 +1874,19 @@ class YCalculation():
         plot_handles = []
         
         if plot_range is None:
-            target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-            # Round up to closest value in the above list
-            ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-            
-            # Find a nice plot range for the y-axis
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
-            if omega_min < -self.zerocalc.convert_units(0.1, from_unit="THz", to_unit=unit):
+            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
                 # Include the unstable phonon modes in the plot
-                omega_min_scale = min(0., np.sign(omega_min)*ceil_to(np.abs(omega_min)/rounding_scale)*rounding_scale)
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max)
             else:
-                omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
-            omega_max_scale = ceil_to(omega_max/rounding_scale)*rounding_scale
+                omega_min_scale, omega_max_scale = \
+                    round_plot_range(omega_min, omega_max, clamp_min=0)
         else:
             omega_min_scale = plot_range[0]
             omega_max_scale = plot_range[1]
+        ax.set_ylim(omega_min_scale, omega_max_scale)
         
         for index, ax in enumerate(ax_handles):
             marker_sizes = marker_max_radius**2*Ys2_perm[:,index,:]

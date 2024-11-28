@@ -12,7 +12,8 @@ import os
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from phonopyReaders import PhonopyCommensurateCalculation, YCalculation
+from phonopyReaders import PhonopyCommensurateCalculation, YCalculation, \
+    round_plot_range
 from pathsLabels import get_path_and_labels
 
 mpl.rcParams['font.family'] = 'serif'
@@ -20,6 +21,29 @@ mpl.rcParams['font.serif'] = ['Computer Modern']
 mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble']="\\usepackage{bm}"
 np.set_printoptions(precision=6, suppress=True)
+
+#%% Input parameters
+
+plots_folder = "plots/"
+text_sizes=(15, 16, 18)
+recalculate = False  # Warning: recalculating data takes several days
+recalc_qmesh = 128  # Set to 16 for fast inaccurate calculation
+recalc_sigma = 0.1  # Smearing width, set to 0.8 when setting recalc_qmesh=16
+recalc_parallel_jobs = 4
+
+colors = [
+    (0.4, 0.1, 0.1),
+    (0.4, 0.4, 1.0),
+    (0.2, 0.2, 0.2),
+    (0.8, 0.3, 0.8),
+    (0.1, 0.3, 0.1),
+    (0.7, 0.7, 0.2),
+    (0.1, 0.3, 0.4),
+    (0.9, 0.3, 0.3),
+    (0.1, 0.1, 0.4),
+    (0.2, 0.7, 0.2)
+]
+
 
 def read_filename(name):
     dirname, tail = os.path.split(name)
@@ -34,9 +58,6 @@ def read_filename(name):
         "file_type": extension
     }
     return material_props
-
-plots_folder = "plots/"
-text_sizes=(15, 16, 18)
 
 #%% Plot of the FCC Brillouin zone with high-symmetry path
 
@@ -63,7 +84,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename = plots_folder+"FCC1BZ_high.pdf"
+save_filename = plots_folder+"FCC1BZ_high"
 view_angles = (18, 26, 0)
 save_bbox = [[1.8, 0.9], [4.7, 4.5]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -104,7 +125,7 @@ quiver_plot[3, :, 0] = 0.5*np.array([1.0,1.0,0.0])
 quiver_plot[3, :, 1] = 0.2*np.array([1.0,1.0,0.0])
 quiver_plot[3, :, 2] = 0.75*np.array([1.0,1.0,0.0])
 
-save_filename =  plots_folder+"FCC1BZ_low.pdf"
+save_filename =  plots_folder+"FCC1BZ_low"
 view_angles = (18, 26, 0)
 save_bbox = [[1.8, 0.9], [4.7, 4.5]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -116,16 +137,47 @@ calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles,
 
 unit="THz"
 supercell_sizes = [2,3,4,5,6]
-
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
+if recalculate:
+    material_name = "LiF"
+    moments = np.array([-0.5, -1.0, -1.5])
+    a_str = "_a4.004"
+    Efield = 0.01
+    data_folder = "data/LiF/Efields"
+    born_file = data_folder+"/BORN_"+material_name+a_str
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    for supercell_size in supercell_sizes:
+        supercell_string = "super"+3*str(supercell_size)
+        Eminus_file = common_str+"E-"+str(Efield)+"_"+supercell_string+".yaml"
+        Ezero_file = common_str+"E0.0_"+supercell_string+".yaml"
+        Eplus_file = common_str+"E"+str(Efield)+"_"+supercell_string+".yaml"
+        Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                            np.array([-Efield,0.00,Efield]), 
+                            born_filename=born_file, take_imag=True)
+        plot_title = "LiF "+supercell_string
+        savedata_filename = "results/LiF/"+supercell_string+"/qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
+        savefig_filename = None
+        savetxt_filename = None
+        Ycalc.calculate_Tomega(q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit,
+                            sigma=recalc_sigma, include_nac="Gonze", moments=moments,
+                            q_split_levels=2, parallel_jobs=recalc_parallel_jobs,
+                            savedata_filename = savedata_filename, 
+                            savefigures_filename = savefig_filename,
+                            savetxt_filename = savetxt_filename,
+                            title=plot_title)
 omega_max = 0
 Tomega_max = 0
 fig, ax = plt.subplots()
 plot_handles = []
 for index, supercell_size in enumerate(supercell_sizes):
     supercell_string = "super"+str(supercell_size)*3
-    data = np.load("results/LiF/"+supercell_string+"/qmesh128_sigma0.1_a4.004.npz")
+    data = np.load("results/LiF/"+supercell_string+"/"+inputs_string+".npz")
     omega = data["omega"]
-    T_omega = data["Tomega"]  
+    T_omega = data["Tomega"]
+    if index == 0:
+        full_data_array = np.array([omega, T_omega])
+    else:
+        full_data_array = np.append(full_data_array, np.array([T_omega]), axis=0)  
     omega_max = max(omega[-1], omega_max)   
     Tomega_max = max(np.max(T_omega), Tomega_max) 
     mesh_str = "$"+str(supercell_size)+"\\times"+str(supercell_size)+"\\times"+str(supercell_size)+"$"
@@ -133,13 +185,8 @@ for index, supercell_size in enumerate(supercell_sizes):
     plot_handles.append(plot_handle)
     print("Moments of T(omega) for "+supercell_string+":")
     print(data['Tmoments'])
-    
-    
-# Find a decent upper bound for the y-axis
-target_roundings = [1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-ceil_to = lambda x: target_roundings[np.nonzero(target_roundings > x)[0][0]]
-rounding_scale = 10**np.floor(np.log10(abs(Tomega_max)))
-Tomega_max_scale = ceil_to(Tomega_max/rounding_scale)*rounding_scale
+
+_, Tomega_max_scale = round_plot_range(0, Tomega_max, clamp_min = 0)
     
 ax.set_title("", size=text_sizes[2])
 ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
@@ -151,7 +198,16 @@ ax.tick_params(axis='both', labelsize=text_sizes[0])
 fig.tight_layout()
 fig.show()
 
-fig.savefig(plots_folder+"LiF_Tomega_conv_qmesh128_sigma0.1_a4.004.pdf")
+fig.savefig(plots_folder+"LiF_Tomega_conv_"+inputs_string+".pdf")
+
+np.savetxt("plots/LiF_Tomega_conv_"+inputs_string+"_data.txt", 
+           np.transpose(full_data_array),
+           header="  Frequency (THz)      "+\
+                "    T(omega), 2x2x2      "+\
+                "    T(omega), 3x3x3      "+\
+                "    T(omega), 4x4x4      "+\
+                "    T(omega), 5x5x5      "+\
+                "    T(omega), 6x6x6      ")
 
 #%% Plot of phonon bands and LATO weights in LiF
 
@@ -161,7 +217,7 @@ calc = PhonopyCommensurateCalculation(data_folder+"/LiF_a4.004_E0.0_super666.yam
 path, path_labels = get_path_and_labels("FCC", False)
 path_low, path_labels_low = get_path_and_labels("FCC", True)
 calc.plot_bands(path, path_labels, npoints=101, include_nac="Gonze", plot_range=(0,20), title="LiF phonon bands", 
-                save_filename=plots_folder+"LiF_phonons_a4.004_super666.pdf", text_sizes=text_sizes)
+                save_filename=plots_folder+"LiF_phonons_a4.004_super666", text_sizes=text_sizes)
 calc.plot_LATO_weights(path_low, path_labels_low, npoints=101, num_markers=151, include_nac="Gonze", plot_range=(0,20), 
                        save_filename=plots_folder+"LiF_phonons_a4.004_super666", subplots=False, text_sizes=text_sizes)
 
@@ -189,43 +245,89 @@ print("Maximum value of |Y|² on the summed plot: "+str(Y2_sum_max)+"Å²")
 #%% Plot of LATO contributions to T(omega) in LiF
 
 unit="THz"
-data = np.load("results/LiF/super666/qmesh128_sigma0.1_a4.004.npz")
-omega = data["omega"]
-T_omega = data["Tomega"]  
-labels = ["TA", "LA", "TO", "LO"]
-name = "LATO"
-partials = [[0],[1],[2],[3]]
-Tomega_res = data['Tomega_LATO']
-    
-num_partials = len(partials)
-num_contributions = int(num_partials*(num_partials+1)/2)
-T_contributions = np.zeros((num_contributions, len(omega)))
-contribution_labels = []
-count = 0
-for index1 in range(0, num_partials):
-    T_contributions[count] = Tomega_res[:, index1, index1]
-    contribution_labels.append(labels[index1]+"-"+labels[index1])
-    count += 1
-    for index2 in range(index1+1, num_partials):
-        T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
-        contribution_labels.append(labels[index1]+"-"+labels[index2])
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
+
+if recalculate:
+    material_name = "LiF"
+    moments = np.array([-0.5, -1.0, -1.5])
+    supercell_string = "super666"
+    a_str = "_a4.004"
+    Efield = 0.01
+    data_folder = "data/LiF/Efields"
+    born_file = data_folder+"/BORN_"+material_name+a_str
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    Eminus_file = common_str+"E-"+str(Efield)+"_"+supercell_string+".yaml"
+    Ezero_file = common_str+"E0.0_"+supercell_string+".yaml"
+    Eplus_file = common_str+"E"+str(Efield)+"_"+supercell_string+".yaml"
+    Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                        np.array([-Efield,0.00,Efield]), 
+                        born_filename=born_file, take_imag=True)
+    plot_title = "LiF"
+    savedata_filename = "results/LiF/"+supercell_string+"/qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
+    savefig_filename = plots_folder+"LiF_Tomega_LATO_"+inputs_string
+    savetxt_filename = plots_folder+"LiF_Tomega_LATO_"+inputs_string+"_data"
+    Ycalc.calculate_Tomega(q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit,
+                           sigma=recalc_sigma, include_nac="Gonze", moments=moments,
+                           q_split_levels=2, parallel_jobs=recalc_parallel_jobs,
+                           savedata_filename = savedata_filename, 
+                           savefigures_filename = savefig_filename,
+                           savetxt_filename = savetxt_filename,
+                           title=plot_title)
+else:
+    data = np.load("results/LiF/super666/"+inputs_string+".npz")
+    omega = data["omega"]
+    T_omega = data["Tomega"]  
+    labels = ["TA", "LA", "TO", "LO"]
+    name = "LATO"
+    partials = [[0],[1],[2],[3]]
+    Tomega_res = data['Tomega_LATO']
+        
+    num_partials = len(partials)
+    num_contributions = int(num_partials*(num_partials+1)/2)
+    T_contributions = np.zeros((num_contributions, len(omega)))
+    contribution_labels = []
+    count = 0
+    for index1 in range(0, num_partials):
+        T_contributions[count] = Tomega_res[:, index1, index1]
+        contribution_labels.append(labels[index1]+"-"+labels[index1])
         count += 1
+        for index2 in range(index1+1, num_partials):
+            T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
+            contribution_labels.append(labels[index1]+"-"+labels[index2])
+            count += 1
 
-fig, ax = plt.subplots()
-plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
-plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
-plot_handles.append(plot_handle_total)
+    fig, ax = plt.subplots()
+    plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                                colors=colors)
+    plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
+    plot_handles.append(plot_handle_total)
 
-ax.set_title("LiF", fontsize=text_sizes[2])
-ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
-ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
-ax.legend(handles=plot_handles[::-1], fontsize=13)
-ax.set_xlim(0, 40)
-ax.set_ylim(0, 0.00025)
-ax.tick_params(axis='both', labelsize=text_sizes[0])
-fig.tight_layout()
-fig.show()
-fig.savefig(plots_folder+"LiF_Tomega_LATO_qmesh128_sigma0.1_a4.004.pdf")
+    ax.set_title("LiF", fontsize=text_sizes[2])
+    ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
+    ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+    ax.legend(handles=plot_handles[::-1], fontsize=13)
+    ax.set_xlim(0, 40)
+    ax.set_ylim(0, 0.00025)
+    ax.tick_params(axis='both', labelsize=text_sizes[0])
+    fig.tight_layout()
+    fig.show()
+    fig.savefig(plots_folder+"LiF_Tomega_LATO_"+inputs_string+".pdf")
+
+    full_data_array = np.transpose(np.append(np.array([omega, T_omega]), T_contributions, axis=0))
+    np.savetxt("plots/LiF_Tomega_LATO_"+inputs_string+"_data.txt", 
+            full_data_array,
+            header="  Frequency (THz)      "+\
+                    "    T(omega), total      "+\
+                    "    T(omega), TA-TA      "+\
+                    "    T(omega), TA-LA      "+\
+                    "    T(omega), TA-TO      "+\
+                    "    T(omega), TA-LO      "+\
+                    "    T(omega), LA-LA      "+\
+                    "    T(omega), LA-TO      "+\
+                    "    T(omega), LA-LO      "+\
+                    "    T(omega), TO-TO      "+\
+                    "    T(omega), TO-LO      "+\
+                    "    T(omega), LO-LO      ")
 
 
 
@@ -254,7 +356,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename =  plots_folder+"CUB1BZ_high.pdf"
+save_filename =  plots_folder+"CUB1BZ_high"
 view_angles = (18, 26, 0)
 save_bbox = [[1.5, 0.6], [5.15, 4.65]]
 calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles, label_shifts=label_shifts,
@@ -287,7 +389,7 @@ quiver_plot[0:3,:,0] = 0.5*np.eye(3)
 quiver_plot[0:3,:,1] = 0.2*np.eye(3)
 quiver_plot[0:3,:,2] = 0.8*np.eye(3)
 
-save_filename = plots_folder+"CUB1BZ_low.pdf"
+save_filename = plots_folder+"CUB1BZ_low"
 view_angles = (18, 26, 0)
 save_bbox = [[1.5, 0.6], [5.15, 4.65]]
 
@@ -321,40 +423,86 @@ print("Maximum value of |Y|² on the summed plot: "+str(Y2_sum_max)+"Å²")
 #%% Plot of LATO contributions to T(omega) in KTaO3
 
 unit="THz"
-data = np.load("results/KTaO3/super444/qmesh128_sigma0.1_a3.99.npz")
-omega = data["omega"]
-T_omega = data["Tomega"]  
-labels = ["TA", "LA", "TO", "LO"]
-name = "LATO"
-partials = [[0],[1],[2],[3]]
-Tomega_res = data['Tomega_LATO']
-    
-num_partials = len(partials)
-num_contributions = int(num_partials*(num_partials+1)/2)
-T_contributions = np.zeros((num_contributions, len(omega)))
-contribution_labels = []
-count = 0
-for index1 in range(0, num_partials):
-    T_contributions[count] = Tomega_res[:, index1, index1]
-    contribution_labels.append(labels[index1]+"-"+labels[index1])
-    count += 1
-    for index2 in range(index1+1, num_partials):
-        T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
-        contribution_labels.append(labels[index1]+"-"+labels[index2])
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a3.99"
+
+if recalculate:
+    material_name = "KTaO3"
+    moments = np.array([-0.5, -1.0, -1.5])
+    supercell_string = "super444"
+    a_str = "_a3.99"
+    Efield = 0.005
+    data_folder = "data/KTaO3/Efields"
+    born_file = data_folder+"/BORN_"+material_name+a_str
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    Eminus_file = common_str+"E-"+str(Efield)+"_"+supercell_string+".yaml"
+    Ezero_file = common_str+"E0.0_"+supercell_string+".yaml"
+    Eplus_file = common_str+"E"+str(Efield)+"_"+supercell_string+".yaml"
+    Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                        np.array([-Efield,0.00,Efield]), 
+                        born_filename=born_file, take_imag=True)
+    plot_title = "KTaO$_3$"
+    savedata_filename = "results/KTaO3/"+supercell_string+"/qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
+    savefig_filename = plots_folder+"KTaO3_Tomega_LATO_"+inputs_string
+    savetxt_filename = plots_folder+"KTaO3_Tomega_LATO_"+inputs_string+"_data"
+    Ycalc.calculate_Tomega(q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit,
+                           sigma=recalc_sigma, include_nac="Gonze", moments=moments,
+                           q_split_levels=2, parallel_jobs=recalc_parallel_jobs,
+                           savedata_filename = savedata_filename, 
+                           savefigures_filename = savefig_filename,
+                           savetxt_filename = savetxt_filename,
+                           title=plot_title)
+else:
+    data = np.load("results/KTaO3/super444/qmesh128_sigma0.1_a3.99.npz")
+    omega = data["omega"]
+    T_omega = data["Tomega"]  
+    labels = ["TA", "LA", "TO", "LO"]
+    name = "LATO"
+    partials = [[0],[1],[2],[3]]
+    Tomega_res = data['Tomega_LATO']
+        
+    num_partials = len(partials)
+    num_contributions = int(num_partials*(num_partials+1)/2)
+    T_contributions = np.zeros((num_contributions, len(omega)))
+    contribution_labels = []
+    count = 0
+    for index1 in range(0, num_partials):
+        T_contributions[count] = Tomega_res[:, index1, index1]
+        contribution_labels.append(labels[index1]+"-"+labels[index1])
         count += 1
+        for index2 in range(index1+1, num_partials):
+            T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
+            contribution_labels.append(labels[index1]+"-"+labels[index2])
+            count += 1
 
-fig, ax = plt.subplots()
-plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels)
-plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
-plot_handles.append(plot_handle_total)
+    fig, ax = plt.subplots()
+    plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
+                                colors=colors)
+    plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
+    plot_handles.append(plot_handle_total)
 
-ax.set_title("KTaO$_3$", fontsize=text_sizes[2])
-ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
-ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
-ax.legend(handles=plot_handles[::-1], fontsize=13, ncol=2)
-ax.set_xlim(0, 50)
-ax.set_ylim(0, 0.006)
-ax.tick_params(axis='both', labelsize=text_sizes[0])
-fig.tight_layout()
-fig.show()
-fig.savefig(plots_folder+"KTaO3_Tomega_LATO_qmesh128_sigma0.1_a3.99.pdf")
+    ax.set_title("KTaO$_3$", fontsize=text_sizes[2])
+    ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
+    ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+    ax.legend(handles=plot_handles[::-1], fontsize=13, ncol=2)
+    ax.set_xlim(0, 50)
+    ax.set_ylim(0, 0.006)
+    ax.tick_params(axis='both', labelsize=text_sizes[0])
+    fig.tight_layout()
+    fig.show()
+    fig.savefig(plots_folder+"KTaO3_Tomega_LATO_qmesh128_sigma0.1_a3.99.pdf")
+
+    full_data_array = np.transpose(np.append(np.array([omega, T_omega]), T_contributions, axis=0))
+    np.savetxt("plots/KTaO3_Tomega_LATO_qmesh128_sigma0.1_a3.99_data.txt", 
+            full_data_array,
+            header="  Frequency (THz)      "+\
+                    "    T(omega), total      "+\
+                    "    T(omega), TA-TA      "+\
+                    "    T(omega), TA-LA      "+\
+                    "    T(omega), TA-TO      "+\
+                    "    T(omega), TA-LO      "+\
+                    "    T(omega), LA-LA      "+\
+                    "    T(omega), LA-TO      "+\
+                    "    T(omega), LA-LO      "+\
+                    "    T(omega), TO-TO      "+\
+                    "    T(omega), TO-LO      "+\
+                    "    T(omega), LO-LO      ")
