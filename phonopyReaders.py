@@ -1580,8 +1580,8 @@ class YCalculation():
     
     def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None, sigma_factor=0.01,
                          omega=None, num_omegas=1001, moments=None, moments_scaling_frequency=None, q_split_levels=0, 
-                         parallel_jobs=1, savedata_filename=None, savefigures_filename=None, text_sizes=(13, 15, 16), 
-                         title=None, colors=None):
+                         parallel_jobs=1, savedata_filename=None, savetxt_filename=None, savefigures_filename=None, 
+                         text_sizes=(13, 15, 16), title=None, colors=None, ):
         # Calculate T(omega) with the smearing method and interpolation for Y, at temperature zero
         
 
@@ -1709,6 +1709,22 @@ class YCalculation():
                     T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
                     contribution_labels.append(labels[index1]+"-"+labels[index2])
                     count += 1
+            
+            if name=="LATO" and savetxt_filename is not None:
+                full_data_array = np.transpose(np.append(np.array([omega, Tomega]), T_contributions, axis=0))
+                np.savetxt(savetxt_filename+".txt", full_data_array,
+                        header="  Frequency (THz)      "+\
+                                "    T(omega), total      "+\
+                                "    T(omega), TA-TA      "+\
+                                "    T(omega), TA-LA      "+\
+                                "    T(omega), TA-TO      "+\
+                                "    T(omega), TA-LO      "+\
+                                "    T(omega), LA-LA      "+\
+                                "    T(omega), LA-TO      "+\
+                                "    T(omega), LA-LO      "+\
+                                "    T(omega), TO-TO      "+\
+                                "    T(omega), TO-LO      "+\
+                                "    T(omega), LO-LO      ")
             
             fig, ax = plt.subplots()
             plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
