@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Fri Aug 23 16:57:08 2024
+Example usage that generates all figures in the publication
 
-@author: hmatt
+Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
 
 #%% Load important libraries
