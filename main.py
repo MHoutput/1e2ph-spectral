@@ -139,7 +139,11 @@ for index, supercell_size in enumerate(supercell_sizes):
     supercell_string = "super"+str(supercell_size)*3
     data = np.load("results/LiF/"+supercell_string+"/qmesh128_sigma0.1_a4.004.npz")
     omega = data["omega"]
-    T_omega = data["Tomega"]  
+    T_omega = data["Tomega"]
+    if index == 0:
+        full_data_array = np.array([omega, T_omega])
+    else:
+        full_data_array = np.append(full_data_array, np.array([T_omega]), axis=0)  
     omega_max = max(omega[-1], omega_max)   
     Tomega_max = max(np.max(T_omega), Tomega_max) 
     mesh_str = "$"+str(supercell_size)+"\\times"+str(supercell_size)+"\\times"+str(supercell_size)+"$"
@@ -161,6 +165,15 @@ fig.tight_layout()
 fig.show()
 
 fig.savefig(plots_folder+"LiF_Tomega_conv_qmesh128_sigma0.1_a4.004.pdf")
+
+np.savetxt("plots/LiF_Tomega_conv_qmesh128_sigma0.1_a4.004_data.txt", 
+           np.transpose(full_data_array),
+           header="  Frequency (THz)      "+\
+                "    T(omega), 2x2x2      "+\
+                "    T(omega), 3x3x3      "+\
+                "    T(omega), 4x4x4      "+\
+                "    T(omega), 5x5x5      "+\
+                "    T(omega), 6x6x6      ")
 
 #%% Plot of phonon bands and LATO weights in LiF
 
@@ -236,6 +249,22 @@ ax.tick_params(axis='both', labelsize=text_sizes[0])
 fig.tight_layout()
 fig.show()
 fig.savefig(plots_folder+"LiF_Tomega_LATO_qmesh128_sigma0.1_a4.004.pdf")
+
+full_data_array = np.transpose(np.append(np.array([omega, T_omega]), T_contributions, axis=0))
+np.savetxt("plots/LiF_Tomega_LATO_qmesh128_sigma0.1_a4.004_data.txt", 
+           full_data_array,
+           header="  Frequency (THz)      "+\
+                "    T(omega), total      "+\
+                "    T(omega), TA-TA      "+\
+                "    T(omega), TA-LA      "+\
+                "    T(omega), TA-TO      "+\
+                "    T(omega), TA-LO      "+\
+                "    T(omega), LA-LA      "+\
+                "    T(omega), LA-TO      "+\
+                "    T(omega), LA-LO      "+\
+                "    T(omega), TO-TO      "+\
+                "    T(omega), TO-LO      "+\
+                "    T(omega), LO-LO      ")
 
 
 
@@ -369,3 +398,19 @@ ax.tick_params(axis='both', labelsize=text_sizes[0])
 fig.tight_layout()
 fig.show()
 fig.savefig(plots_folder+"KTaO3_Tomega_LATO_qmesh128_sigma0.1_a3.99.pdf")
+
+full_data_array = np.transpose(np.append(np.array([omega, T_omega]), T_contributions, axis=0))
+np.savetxt("plots/KTaO3_Tomega_LATO_qmesh128_sigma0.1_a3.99_data.txt", 
+           full_data_array,
+           header="  Frequency (THz)      "+\
+                "    T(omega), total      "+\
+                "    T(omega), TA-TA      "+\
+                "    T(omega), TA-LA      "+\
+                "    T(omega), TA-TO      "+\
+                "    T(omega), TA-LO      "+\
+                "    T(omega), LA-LA      "+\
+                "    T(omega), LA-TO      "+\
+                "    T(omega), LA-LO      "+\
+                "    T(omega), TO-TO      "+\
+                "    T(omega), TO-LO      "+\
+                "    T(omega), LO-LO      ")
