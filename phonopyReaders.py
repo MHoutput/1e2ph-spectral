@@ -765,7 +765,36 @@ class PhonopyCalculation:
         return self.qpoints
     
     def parse_path(self, path, path_labels, npoints=51):
-        # Parse the given path, the input format is the same as the PhonoPy Python inerface
+        """Convert a given path to a list of q-points and plot inputs
+
+        Arguments
+        ---------
+        path: list of list of list of real
+            High-symmetry path, written in direct coordinates in the same
+            conventions as PhonoPy and pathsLabels.py
+                - First level: list of connected path segments
+                - Second level: list of points that mark path segments
+                - Third level: direct coordinates of points
+        path_labels: list of str
+            List of names of the edge points of the path, in order,
+            written in LaTeX markup
+        npoints: number of q-points on each segment
+
+        Returns
+        -------
+        qs: np.array of real
+            shape(:, 3), list of q-points on the path
+        distances: np.array of real
+            shape(:), reciprocal distances along the path, used as
+            x-axis data on a plot of phonon bands
+        xaxis_labels: list of str
+            Size: one more than number of segments in the path
+            List of labels of special points, to plot on the x-axis
+            on a plot of phonon bands
+        jump_indices: list of int
+            Indices where the path shows a discontinuous jump
+
+        """
         qs = []
         distances_to_nearest = []
         xaxis_labels = [path_labels[0]]
@@ -773,14 +802,16 @@ class PhonopyCalculation:
         do_between_code = False
         for mini_path in path:
             if do_between_code:
-                # Change the last label A to something of the form A|B
+                # Change the last label A to something of the form "A|B"
+                # to indicate a discontinuous jump
                 xaxis_labels[-1] += "$|$" + path_labels[label_count]
                 label_count += 1
             else:
                 do_between_code = True
             qs_mini = []
             for i in range(len(mini_path)-1):
-                qs_to_append = np.linspace(mini_path[i], mini_path[i+1], npoints)
+                qs_to_append = np.linspace(mini_path[i], mini_path[i+1], 
+                                           npoints)
                 qs.append(qs_to_append)
                 qs_mini.append(qs_to_append)
                 xaxis_labels.append(path_labels[label_count])
@@ -789,32 +820,67 @@ class PhonopyCalculation:
             # Calculate list of distances between two neighbouring points
             qs_cartesian = qs_mini @ self.get_reciprocal_lattice_vectors()
             distances_mini = np.zeros((len(qs_mini),), dtype=float)
-            distances_mini[1:] = np.linalg.norm(qs_cartesian[1:]-qs_cartesian[:-1], axis=1)
+            distances_mini[1:] = np.linalg.norm(qs_cartesian[1:]-\
+                                                qs_cartesian[:-1], axis=1)
             distances_to_nearest.extend(distances_mini.tolist())
-        jump_indices = np.cumsum((np.array([len(x) for x in path])-1)*npoints)[:-1] - 1
+        jump_indices = np.cumsum((np.array([len(x) for x in path])-1)\
+                                 *npoints)[:-1] - 1
         qs = np.array(qs).reshape((-1,3))
         distances = np.cumsum(np.array(distances_to_nearest))
         return qs, distances, xaxis_labels, jump_indices
     
     def get_Brillouin_boundary(self, reciprocal_lattice_vectors=None):
-        # Calculates and returns the Miller indices of the planes that make up the Birllouin zone, as well as a list of
-        # all the corners and edges on its surface. This is ueful for plotting the Brillouin zone.
-        # Only works in 3D.
-        # This code is heavily based off of http://lampz.tugraz.at/~hadley/ss1/bzones/drawing_BZ.php
+        """ Calculates corners, edges, and planes of the Brillouin zone
+
+        Returns the Miller indices of the planes that make up the edge
+        of the first Brillouin zone, as well as a list of all the
+        corners and edges on its surface. This is useful for plotting
+        the Brillouin zone.
+        Only works when self.num_dimensions = 3
+        This code is heavily based off the code found at
+        http://lampz.tugraz.at/~hadley/ss1/bzones/drawing_BZ.php
+
+        Arguments
+        ---------
+        reciprocal_lattice_vectors: np.array of real
+            shape (3,3), units of inverse Angstroms
+            Default: self.reciprocal_lattice_vectors
+        
+        Returns
+        -------
+        miller_indices: np.array of int
+            shape (:,3)
+            Miller indices of faces of the Brillouin zone
+        corners: np.array of real
+            shape (:,3)
+            Cartesian coordinates of the corners of the Brillouin zone
+        edges: np.array of real
+            shape (:,2,3)
+            Cartesian coordinates of pairs of corners that define
+            the edges of the Brillouin zone
+        edge_planes: np.array of int
+            shape (:,2,3)
+            Miller indices of pairs of planes that intersect at the
+            edges of the Brillouin zone
+
+        """
         
         if reciprocal_lattice_vectors is None:
             reciprocal_lattice_vectors = self.get_reciprocal_lattice_vectors()
         num_dimensions = len(reciprocal_lattice_vectors)
         
-        # Get the 26 G-vectors
+        # Get the 26 G-vectors surrounding Gamma
         cutoff = 1
         modulos = (2*cutoff+1)*np.ones((num_dimensions-1,), dtype=int)
-        Gpoints = np.array([get_modular_indices(n, modulos) - cutoff for n in range((2*cutoff+1)**num_dimensions)])
-        for zero_index in np.nonzero(np.linalg.norm(Gpoints, ord=2, axis=1) < 1e-10)[0]:
+        Gpoints = np.array([get_modular_indices(n, modulos) - cutoff 
+                            for n in range((2*cutoff+1)**num_dimensions)])
+        for zero_index in np.nonzero(np.linalg.norm(Gpoints, ord=2, axis=1) 
+                                     < 1e-10)[0]:
             Gpoints = np.delete(Gpoints, zero_index, axis=0)
         Gcart = Gpoints @ reciprocal_lattice_vectors
         
-        # Find the distances from the planes to Gamma and the other reciprocal points
+        # Find the distances from the planes to Gamma and the other reciprocal 
+        # points
         accepted_Gs = []
         accepted_Gscart = []
         for index, G1cart in enumerate(Gcart):
@@ -827,7 +893,8 @@ class PhonopyCalculation:
         
         # Find all corners as intersections of three planes
         corners = []
-        for G1, G2, G3 in itertools.combinations(accepted_Gscart, 3):  # Iterate over all triplets of planes 
+        for G1, G2, G3 in itertools.combinations(accepted_Gscart, 3):  
+            # Iterate over all triplets of planes 
             system_matrix = np.array([G1,G2,G3])
             if np.linalg.det(system_matrix) != 0:
                 system_RHS = 0.5*np.linalg.norm(system_matrix, ord=2, axis=1)**2
@@ -841,24 +908,30 @@ class PhonopyCalculation:
                 accept_corner = True
                 for corner2 in accepted_corners:
                     if np.min(np.linalg.norm(corner-corner2, ord=2)) < 1e-10:
-                        accept_corner = False  # Only accept the corner if it's unique
+                        accept_corner = False  # Only accept unique corners
                 if accept_corner:
                     accepted_corners.append(corner)
                     
-        # Find all edges, by checking every pair of corners and whether they are both on the same two planes
+        # Find all edges, by checking every pair of corners and whether they 
+        # are both on the same two planes
         accepted_edges = []
         accepted_edge_planes = []
-        for G1, G2 in itertools.combinations(accepted_Gs, 2):  # Iterate over all pairs of planes
+        for G1, G2 in itertools.combinations(accepted_Gs, 2):  
+            # Iterate over all pairs of planes
             G1_cart = G1 @ reciprocal_lattice_vectors
             G2_cart = G2 @ reciprocal_lattice_vectors
-            for corner1, corner2 in itertools.combinations(accepted_corners, 2):  # Iterate over all pairs of corners
+            for corner1, corner2 in itertools.combinations(accepted_corners, 2):  
+                # Iterate over all pairs of corners
                 distance_11 = np.abs(G1_cart@corner1-0.5*G1_cart@G1_cart)
                 distance_12 = np.abs(G2_cart@corner1-0.5*G2_cart@G2_cart)
                 distance_21 = np.abs(G1_cart@corner2-0.5*G1_cart@G1_cart)
                 distance_22 = np.abs(G2_cart@corner2-0.5*G2_cart@G2_cart)
-                if distance_11 < 1e-10 and distance_12 < 1e-10 and distance_21 < 1e-10 and distance_22 < 1e-10:
-                    accepted_edges.append([corner1, corner2])  # The edge is defined by two corners
-                    accepted_edge_planes.append([G1, G2])  # We also keep the two planes that the edges are on
+                if (distance_11 < 1e-10 and distance_12 < 1e-10 \
+                    and distance_21 < 1e-10 and distance_22 < 1e-10):
+                    # The edge is defined by two corners
+                    accepted_edges.append([corner1, corner2]) 
+                    # We also keep the two planes that the edges are on
+                    accepted_edge_planes.append([G1, G2])  
         
         miller_indices = np.array(accepted_Gs)
         corners = np.array(accepted_corners)
@@ -868,9 +941,11 @@ class PhonopyCalculation:
     
     def plot_Brillouin(self, path=[], path_labels=[], view_angles=None, 
                        reciprocal_lattice_vectors=None, visible_linestyle=None, 
-                       invisible_linestyle=None, path_linestyle=None, label_style=None, quiver_plot=None, 
-                       quiver_labels=None, quiver_style=None, quiver_label_style=None, label_shifts=None, 
-                       save_filename=None, save_bbox_extents=None):
+                       invisible_linestyle=None, path_linestyle=None, 
+                       label_style=None, quiver_plot=None, quiver_labels=None, 
+                       quiver_style=None, quiver_label_style=None, 
+                       label_shifts=None, save_filename=None, 
+                       save_bbox_extents=None):
         # Makes a plot of the first Brillouin zone in 3D
         # If a path and path labels are given, this path is shown inside the Brillouin zone
         # view_angles should contain the elevation, azimuth, and roll angles of the plot, in degrees
