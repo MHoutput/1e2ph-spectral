@@ -939,49 +939,127 @@ class PhonopyCalculation:
         edge_planes = np.array(accepted_edge_planes)
         return miller_indices, corners, edges, edge_planes
     
-    def plot_Brillouin(self, path=[], path_labels=[], view_angles=None, 
-                       reciprocal_lattice_vectors=None, visible_linestyle=None, 
-                       invisible_linestyle=None, path_linestyle=None, 
-                       label_style=None, quiver_plot=None, quiver_labels=None, 
-                       quiver_style=None, quiver_label_style=None, 
-                       label_shifts=None, save_filename=None, 
-                       save_bbox_extents=None):
-        # Makes a plot of the first Brillouin zone in 3D
-        # If a path and path labels are given, this path is shown inside the Brillouin zone
-        # view_angles should contain the elevation, azimuth, and roll angles of the plot, in degrees
-        # Style arguments should be passed as dicts, see default values below
-        # quiver_plot and quiver_labels can contain additional vectors to draw. These should be given in reciprocal
-        #   coordinates. By default these are the reciprocal lattice vectors. Use an empty list for no vectors
-        # label_shifts are shifts for the label positions in reciprocal coordinates, by default all zero
-        # save_bbox_bounds represents the extents of the bounding box used to save the figure, in the
-        #  format [[xmin, ymin], [xmax, ymax]]. By default, a tight bbox is used, but that wastes a lot of space
+    def plot_Brillouin(self, reciprocal_lattice_vectors=None, path=[], 
+                       path_labels=[], label_shifts=None, view_angles=None, 
+                       save_filename=None, save_bbox_extents=None, 
+                       quiver_plot=None, quiver_labels=None, 
+                       visible_linestyle=None, invisible_linestyle=None, 
+                       path_linestyle=None, label_style=None, 
+                       quiver_style=None, quiver_label_style=None):
+        """ Makes a plot of the first Brillouin zone in 3D
+
+        Automatically determines which edges will be visible or
+        invisible, given the view angle, and plots the edges in two
+        different styles accordingly. Style arguments should be passed
+        as dicts. Can save the figure to an external .pdf file
+
+        Arguments
+        ---------
+        reciprocal_lattice_vectors: np.array of real
+            shape (3,3), units of inverse Angstroms
+            Default: self.reciprocal_lattice_vectors
+        path: list of list of list of real
+            High-symmetry path to be plotted on the Brillouin zone
+            Follows the conventions of PhonoPy and pathsLabels.py: 
+                - First level: list of connected path segments
+                - Second level: list of points that mark path segments
+                - Third level: direct coordinates of points
+            Default: no path
+        path_labels: list of str
+            List of names of the edge points to be plotted on the path
+            Default: no labels
+        label_shifts: list of list of real
+            Three-dimensional shifts of the path labels on the plot,
+            to reduce overlap with the special points
+            Default: all zero, no shifts
+        view_angles: tuple of real
+            Elevation, azimuth, and roll angles of the plot, in degrees
+            Default: Matplotlib default view angles
+        save_filename: str
+            Save the figure with the given filename, in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        save_bbox_extents: list of list of real
+            Extents of the bounding box used to save the figure, in the
+            format [[xmin, ymin], [xmax, ymax]]. 
+            Default: tight bbox, but this wastes a lot of space
+        quiver_plot: np.array of real
+            shape (:, 3, 3)
+            Data for additional vectors to draw on the plot
+                - quiver_plot[...,0]: Origins of the vectors
+                - quiver_plot[...,1]: Components of the vectors
+                - quiver_plot[...,2]: Coordinates for quiver_labels
+            Use an empty list for no vectors
+            Default: data for reciprocal lattice vectors b_1, b_2, b_3
+        quiver_labels: list of str
+            Labels for the additional vectors in quiver_plot
+            Default: b_1, b_2, b_3
+        visible_linestyle: dict
+            Linestyle parameters for lines that are visible under
+            the given view angles
+            Default: dict(color="black", linestyle="solid", 
+                linewidth=1.5)
+        invisible_linestyle: dict
+            Linestyle parameters for lines that are not visible under
+            the given view angles
+            Default: dict(color="black", linestyle="dashed", 
+                linewidth=1.0)
+        path_linestyle: dict
+            Linestyle parameters for the high-symmetry path
+            Default: dict(marker='o', linestyle="solid", color='red', 
+                linewidth=2.0)
+        label_style: dict
+            Font style parameters for the labels of the high-symmetry
+            path
+            Default: dict(color="black", fontsize=14)
+        quiver_style: dict
+            Linestyle parameters for the additional vectors plotted
+            using quiver_plot
+            Default: dict(color="black", linestyle="solid", 
+                linewidth=1.0)
+        quiver_label_style:
+            Font style parameters for the labels of the additional
+            vectors
+            Default: dict(color="black", fontsize=14)
+        """
         
         if reciprocal_lattice_vectors is None:
             reciprocal_lattice_vectors = self.get_reciprocal_lattice_vectors()
         if visible_linestyle is None:
-            visible_linestyle = dict(color="black", linestyle="solid", linewidth=1.5)
+            visible_linestyle = dict(color="black", linestyle="solid", 
+                                     linewidth=1.5)
         if invisible_linestyle is None:
-            invisible_linestyle = dict(color="black", linestyle="dashed", linewidth=1.0)
+            invisible_linestyle = dict(color="black", linestyle="dashed", 
+                                       linewidth=1.0)
         if path_linestyle is None:
-            path_linestyle = dict(marker='o', linestyle="solid", color='red', linewidth=2.0)
+            path_linestyle = dict(marker='o', linestyle="solid", color='red', 
+                                  linewidth=2.0)
         if quiver_style is None:
-            quiver_style = dict(color="black", linestyle="solid", linewidth=1.0)
+            quiver_style = dict(color="black", linestyle="solid", 
+                                linewidth=1.0)
         if label_style is None:
             label_style = dict(color="black", fontsize=14)
         if quiver_plot is None:
-            quiver_plot = np.empty((len(reciprocal_lattice_vectors), self.num_dimensions, 3))
-            quiver_plot[...,0] = 0.5*np.eye(len(reciprocal_lattice_vectors))  # The locations where to plot the vectors
-            quiver_plot[...,1] = 0.2*np.eye(len(reciprocal_lattice_vectors))  # The actual vectors to plot
-            quiver_plot[...,2] = 0.8*np.eye(len(reciprocal_lattice_vectors))  # The locations to plot the labels
+            quiver_plot = np.empty((len(reciprocal_lattice_vectors), 
+                                    self.num_dimensions, 3))
+            # The locations where to plot the vectors
+            quiver_plot[...,0] = 0.5*np.eye(len(reciprocal_lattice_vectors))
+            # The actual vectors to plot
+            quiver_plot[...,1] = 0.2*np.eye(len(reciprocal_lattice_vectors))
+            # The locations to plot the labels
+            quiver_plot[...,2] = 0.8*np.eye(len(reciprocal_lattice_vectors))
         if quiver_labels is None:
-            quiver_labels = ["$\\mathbf{b}_1$", "$\\mathbf{b}_2$", "$\\mathbf{b}_3$"]
+            quiver_labels = ["$\\mathbf{b}_1$", "$\\mathbf{b}_2$", 
+                             "$\\mathbf{b}_3$"]
         if quiver_label_style is None:
-            quiver_label_style = dict(color="black", fontsize=14, horizontalalignment="center", 
+            quiver_label_style = dict(color="black", fontsize=14, 
+                                      horizontalalignment="center", 
                                       verticalalignment="center")
         if label_shifts is None:
             label_shifts = np.zeros((len(path_labels), self.num_dimensions))
         
-        miller_indices, corners, edges, edge_planes = self.get_Brillouin_boundary(reciprocal_lattice_vectors)
+        miller_indices, corners, edges, edge_planes = \
+            self.get_Brillouin_boundary(reciprocal_lattice_vectors)
         edge_planes_cart = edge_planes @ reciprocal_lattice_vectors
         
         fig = plt.figure()
@@ -992,8 +1070,10 @@ class PhonopyCalculation:
         # Determine which edges are visible, given the current view angles
         theta = 0.5*np.pi - view_angles[0]*np.pi/180
         phi = view_angles[1]*np.pi/180
-        view_direction = np.array([np.sin(theta)*np.cos(phi), np.sin(theta)*np.sin(phi), np.cos(theta)])
-        # A plane is visible if its normal vector aligns with the view direction (n.v > 0), works because BZ is convex
+        view_direction = np.array([np.sin(theta)*np.cos(phi), 
+                                   np.sin(theta)*np.sin(phi), np.cos(theta)])
+        # A plane is visible if its normal vector aligns with the view 
+        # direction (n.v > 0), works because BZ is convex
         # An edge is visible if either of its two planes is visible
         edges_visible = np.any(edge_planes_cart @ view_direction > 0, axis=1)
             
@@ -1002,7 +1082,8 @@ class PhonopyCalculation:
         unique_points = []
         unique_labels = []
         unique_label_shifts = []
-        for point, label, label_shift in zip(path_points, path_labels, label_shifts):
+        for point, label, label_shift in zip(path_points, path_labels, 
+                                             label_shifts):
             accept_point = True
             for point2 in unique_points:
                 if point == point2:
@@ -1025,15 +1106,18 @@ class PhonopyCalculation:
         for mini_path in path:
             points = np.array(mini_path) @ reciprocal_lattice_vectors
             ax.plot(points[:,0], points[:,1], points[:,2], **path_linestyle)
-        for point, label, shift in zip(unique_points, unique_labels, unique_label_shifts):
+        for point, label, shift in zip(unique_points, unique_labels, 
+                                       unique_label_shifts):
             point_cart = (point + shift) @ reciprocal_lattice_vectors
-            ax.text(point_cart[0], point_cart[1], point_cart[2], label, **label_style)
+            ax.text(point_cart[0], point_cart[1], point_cart[2], label, 
+                    **label_style)
             
         # Draw the reciprocal basis vectors
         vec_origins = quiver_plot[...,0] @ reciprocal_lattice_vectors
         vecs = quiver_plot[...,1] @ reciprocal_lattice_vectors
         label_positions = quiver_plot[...,2] @ reciprocal_lattice_vectors
-        ax.quiver(vec_origins[:,0], vec_origins[:,1], vec_origins[:,2], vecs[:,0], vecs[:,1], vecs[:,2],
+        ax.quiver(vec_origins[:,0], vec_origins[:,1], vec_origins[:,2], 
+                  vecs[:,0], vecs[:,1], vecs[:,2],
                   length=1, arrow_length_ratio=0.3, **quiver_style)
         for point, label in zip(label_positions, quiver_labels):
             ax.text(point[0], point[1], point[2], label, **quiver_label_style)
@@ -1044,12 +1128,15 @@ class PhonopyCalculation:
                                 [corners[:,2].max(), corners[:,2].min()]])
         max_range = (data_limits[:,0]-data_limits[:,1]).max()
         average = np.mean(data_limits, axis=1)
-        cube_corners = 0.5*max_range*np.reshape(np.mgrid[-1:2:2,-1:2:2,-1:2:2], (3,8)).T + average
-        ax.plot(cube_corners[:,0], cube_corners[:,1], cube_corners[:,2], linestyle='None')
+        cube_corners = 0.5*max_range*np.reshape(np.mgrid[-1:2:2,-1:2:2,-1:2:2],
+                                                (3,8)).T + average
+        ax.plot(cube_corners[:,0], cube_corners[:,1], cube_corners[:,2],
+                linestyle='None')
         ax.set_box_aspect([1,1,1])
         ax.grid(False)
         plt.axis('off')
-        ax.view_init(elev=view_angles[0], azim=view_angles[1], roll=view_angles[2])
+        ax.view_init(elev=view_angles[0], azim=view_angles[1], 
+                     roll=view_angles[2])
         
         fig.tight_layout()    
         fig.show()
@@ -1064,8 +1151,10 @@ class PhonopyCalculation:
                 xy = save_bbox_extents[0]
                 width = save_bbox_extents[1][0]-xy[0]
                 height = save_bbox_extents[1][1]-xy[1]
-                fig.patches.extend([plt.Rectangle(xy, width, height, fill=False, color='b', zorder=1000, 
-                                                  transform=fig.dpi_scale_trans, figure=fig)])
+                fig.patches.extend(
+                    [plt.Rectangle(xy, width, height, fill=False, color='b', 
+                                   zorder=1000, transform=fig.dpi_scale_trans, 
+                                   figure=fig)])
         
 
 class PhonopyMeshCalculation(PhonopyCalculation):
