@@ -53,7 +53,24 @@ def get_modular_indices(number, mod_list):
                          number // mod)
     
 def round_plot_range(ymin, ymax, clamp_min=None, clamp_max=None, targets=None):
-    """ Returns rounded plot limits based on min and max of data"""
+    """ Returns rounded plot limits based on min and max of data
+    
+    Arguments
+    ---------
+    ymin: minimum y-value of the data on the plot
+    ymax: maximum y-value of the data on the plot
+    clamp_min: fixed lower limit, default None
+    clamp_max: fixed upper limit, default None
+    targets: list of real, round numbers used as rounding targets
+        Default:    [0.0, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 
+                    3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+    
+    Returns
+    -------
+    ymin_rounded: lower limit for the plot, equals clamp_min if not None
+    ymax_rounded: upper limit for the plot, equals clamp_max if not None
+    
+    """
     
     if targets is None:
         targets = [0.0, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.5, 3.0, 
@@ -108,7 +125,7 @@ class PhonopyCalculation:
         shape (3,3), units of inverse Angstroms
     lattice_vectors: np.array of real
         shape (3,3), units of Angstroms
-    unitcell_volume: np.real
+    unitcell_volume: real
         units of cubic Angstroms
     num_dimensions: int
         Equal to 3
@@ -406,11 +423,14 @@ class PhonopyCalculation:
         """
         frequencies_matrices = self.get_frequencies_matrices(unit)
         eigenvectors_matrices = self.get_eigenvectors_matrices(convention)
-        dynamical_matrices = np.empty((self.numqpoints, self.numbands, self.numbands), dtype=np.complex_)
-        for index, freqs_vecs in enumerate(zip(frequencies_matrices, eigenvectors_matrices)):
+        dynamical_matrices = np.empty((self.numqpoints, self.numbands, 
+                                       self.numbands), dtype=np.complex_)
+        for index, freqs_vecs in enumerate(zip(frequencies_matrices, 
+                                               eigenvectors_matrices)):
             freqs_squared = np.sign(freqs_vecs[0])*np.power(freqs_vecs[0], 2)
             eigvecs = freqs_vecs[1]
-            dynamical_matrices[index,...] = eigvecs.T @ freqs_squared @ eigvecs.conj()
+            dynamical_matrices[index,...] = \
+                eigvecs.T @ freqs_squared @ eigvecs.conj()
         return dynamical_matrices        
     
     def get_lattice_vectors(self):
@@ -431,70 +451,186 @@ class PhonopyCalculation:
         return np.array([get_modular_indices(n, modulos[0:-1]) 
                          for n in range(np.prod(modulos))])
     
-    def get_dense_qmesh(self, size, fixed_indices=np.array([]), num_dimensions=None):
+    def get_dense_qmesh(self, size, fixed_indices=np.array([]), 
+                        num_dimensions=None):
+        """ Return a mesh of q-points for Brillouin zone integration
+
+        Arguments
+        ---------
+        size: int or np.ndarray() of int, shape (3,)
+            Number of q-points in each direction (e.g. 16x16x16)
+            If int, uses the same number for all directions
+            If np.ndarray(), uses these numbers for each direction
+
+        fixed_indices: np.ndarray() of real
+            Keep one or more coordinates fixed. For example, if
+            fixed_indices = np.array([0.1, 0.2]), the coordinates will
+            be of the form [q1, 0.1, 0.2] with varying q1
+            Useful for very large meshes where it is impractical to
+            store the entire mesh in one array
+            Default: No indices fixed
+
+        num_dimensions: int
+            Number of coordinates, usually 3
+            Default: self.num_dimensions
+
+        Returns
+        -------
+        q_mesh: np.array of real
+            shape (size**3, 3) or (prod(size), 3)
+            Array of q-points in the mesh, in direct coordinates
+
+        Raises
+        ------
+        ValueError
+            when size is not an int or np.ndarray()
+        
+        """
         if num_dimensions is None:
             num_dimensions=self.num_dimensions
-        num_free = num_dimensions - len(fixed_indices)  # Number of indices to vary
+        num_free = num_dimensions - len(fixed_indices)
         match size:
             case int():
                 modulos = np.repeat(size, num_free)
             case np.ndarray():
                 modulos = np.floor(size).astype(int).flatten()[0:num_free]
             case _:
-                raise ValueError("size must be one integer or a numpy array of integers")
+                raise ValueError("""size must be one integer 
+                                 or a numpy array of integers""")
         total_size = np.prod(modulos)
         result = np.empty((total_size,num_dimensions))
-        result[:,:num_free] = np.array([get_modular_indices(n, modulos[0:-1]) for n in range(total_size)]) / modulos
+        result[:,:num_free] = np.array([get_modular_indices(n, modulos[0:-1]) 
+                                        for n in range(total_size)]) / modulos
         result[:,num_free:] = fixed_indices
         return result
     
-    def get_Gpoints(self, cutoff_radius=1.65, include_zero=True):
-        metric = self.reciprocal_lattice_vectors @ self.reciprocal_lattice_vectors.T
-        Gnorm = lambda G: np.linalg.norm(G @ self.reciprocal_lattice_vectors, axis=-1)
+    def get_Gpoints(self, cutoff_radius, include_zero=True):
+        """ Generate list of reciprocal lattice points around Gamma
+        
+        Arguments
+        ---------
+        cutoff_radius: real
+            All reciprocal lattice points within a reciprocal distance
+            cutoff_radius of Gamma are included in the list
+
+        include_zero: bool
+            Output does not include G=0 if set to false
+
+        Returns
+        -------
+        Gpoints: np.array of real
+            shape (:, 3), array of reciprocal lattice points
+
+        """
+        metric = self.reciprocal_lattice_vectors @ \
+            self.reciprocal_lattice_vectors.T
+        Gnorm = lambda G: np.linalg.norm(G @ self.reciprocal_lattice_vectors, 
+                                         axis=-1)
         eigenvalues, eigenvectors = np.linalg.eigh(metric)
-        m_cutoff = np.ceil(cutoff_radius/np.sqrt(np.min(eigenvalues))).astype(int)
+        m_cutoff = np.ceil(cutoff_radius \
+                           /np.sqrt(np.min(eigenvalues))).astype(int)
         modulos = (2*m_cutoff+1)*np.ones((self.num_dimensions-1,), dtype=int)
         Gpoints = np.array([get_modular_indices(n, modulos) - m_cutoff 
                             for n in range((2*m_cutoff+1)**self.num_dimensions) 
-                            if Gnorm(get_modular_indices(n, modulos) - m_cutoff) < cutoff_radius])
+                            if Gnorm(get_modular_indices(n, modulos) - m_cutoff)
+                              < cutoff_radius])
         if not include_zero:
-            for zero_index in np.nonzero(np.linalg.norm(Gpoints, ord=2, axis=1) < 1e-10)[0]:
+            for zero_index in np.nonzero(np.linalg.norm(Gpoints, ord=2, axis=1) 
+                                         < 1e-10)[0]:
                 Gpoints = np.delete(Gpoints, zero_index, axis=0)
         return Gpoints  
     
     def get_weights(self):
+        """Return weights for Brillouin zone integration"""
         return self.weights
     
     def get_atom_names(self):
+        """Return names of atoms in the unit cell"""
         return self.atom_names
     
     def get_atom_masses(self):
+        """Return masses of atoms in the unit cell"""
         return self.atom_masses
     
     def get_mass_matrix(self):
-        return np.diag(np.tile(self.get_atom_masses(), (self.num_dimensions,1)).T.reshape(-1))
+        """Return masses of atoms in diagonal matrix form
+        
+        Returns
+        -------
+        maxx_matrix: np.array of real
+            shape (self.numbands, self.numbands)
+        """
+        return np.diag(np.tile(self.get_atom_masses(), 
+                               (self.num_dimensions,1)).T.reshape(-1))
     
     def get_atom_positions(self):
+        """Return positions of atoms in the unit cell"""
         return self.atom_positions
     
     def get_atom_positions_3N(self):
-        # Returns the atom positions repeated 3 times in a single array, useful for the dynamical matrix conventions
-        return np.reshape(np.array([np.tile(self.get_atom_positions()[i], (self.num_dimensions,1)) 
+        """ Returns the atom positions repeated 3 times in a single array
+        
+        Useful for the dynamical matrix conventions
+        """
+        return np.reshape(np.array([np.tile(self.get_atom_positions()[i], 
+                                            (self.num_dimensions,1)) 
                                     for i in range(self.natom)]),
                           (self.numbands, self.num_dimensions))
     
     def get_tauk_difference(self):
-        # Returns the quantity tau_k - tau_k' in a 3Nx3Nx3 array, useful for the dynamical matrix conventions
-        return ( self.get_atom_positions_3N().reshape(self.numbands, 1, self.num_dimensions)
-                -self.get_atom_positions_3N().reshape(1, self.numbands, self.num_dimensions) )
+        """ Returns the quantity tau_k - tau_k'
+        
+        Useful to change between dynamical matrix conventions
+
+        Returns
+        -------
+        tauk_difference: np.array of real
+            shape (self.numbands, self.numbands, 3)
+        """
+        return ( self.get_atom_positions_3N().reshape(self.numbands, 1, 
+                                                      self.num_dimensions)
+                -self.get_atom_positions_3N().reshape(1, self.numbands, 
+                                                      self.num_dimensions) )
     
     def get_c_to_d_factors(self, qs):
-        # Returns the factors to convert a list of dynamical matrices in the c-type convention to the d-type convention
-        return np.exp(2*np.pi*1j* np.moveaxis(self.get_tauk_difference() @ qs.T, [0,1,2], [1,2,0]))
+        """ Factors to convert from c-type to d-type convention
+        
+        Arguments
+        ---------
+        qs: np.array of real
+            shape (:, 3)
+            q-points in which the dynamical matrix is to be calculated
+
+        Returns
+        -------
+        conversion_factors: np.array of complex
+            shape (len(qs), self.numbands, self.numbands)
+            Conversion factors to convert a stack of dynamical matrices
+            in the c-type convention to the d-type convention
+        """
+        return np.exp(2*np.pi*1j*np.moveaxis(self.get_tauk_difference() @ qs.T, 
+                                             [0,1,2], [1,2,0]))
     
     def get_d_to_c_factors(self, qs):
-        # Returns the factors to convert a list of dynamical matrices in the c-type convention to the d-type convention
-        return np.exp(-2*np.pi*1j* np.moveaxis(self.get_tauk_difference() @ qs.T, [0,1,2], [1,2,0]))
+        """ Factors to convert from d-type to c-type convention
+
+        Equal to the complex conjugate of self.get_d_to_c_factors
+        
+        Arguments
+        ---------
+        qs: np.array of real
+            shape (:, 3)
+            q-points in which the dynamical matrix is to be calculated
+
+        Returns
+        -------
+        conversion_factors: np.array of complex
+            shape (len(qs), self.numbands, self.numbands)
+            Conversion factors to convert a stack of dynamical matrices
+            in the d-type convention to the c-type convention
+        """
+        return np.exp(-2*np.pi*1j*np.moveaxis(self.get_tauk_difference() @ qs.T,
+                                               [0,1,2], [1,2,0]))
     
     def convert_units(self, frequencies, from_unit="THz", to_unit="THz"):
         """ Convert phonon frequencies between units
@@ -563,17 +699,47 @@ class PhonopyCalculation:
                 warnings.warn(warn_string)
                 return frequencies_in_THz
     
-    def get_clean_frequencies(self, unit='THz', cutoff=None, min_value=None, frequencies_to_clean=None):
-        # Sets any negative requencies to 1e-10 THz if their absolute value is smaller than 0.1 THz
+    def get_clean_frequencies(self, unit='THz', cutoff=None, min_value=None, 
+                              frequencies_to_clean=None):
+        """ Remove any negative frequencies and small frequencies
+
+        Default behavior: Set any negative requencies to 1e-10 THz 
+        if their absolute value is smaller than 0.1 THz
+        Throws a warning when large negative frequencies are detected
+
+        Arguments
+        ---------
+        unit: string, frequency unit in which inputs are given
+            Default: "THz"
+        cutoff: real, threshold for determining small frequencies
+            Default: 0.1 THz
+        min_value: real, set small frequencies to this value 
+            Default: 1e-10 THz
+        frequencies_to_clean: np.array of real
+            Array of frequencies that must be cleaned in the above way
+            Default: self.frequencies
+
+        Returns
+        -------
+        clean frequencies: np.array of real
+            Array of positive frequencies with shape equal to that
+            of frequencies_to_clean
+
+        Raises
+        ------
+        warning
+            when one of the frequencies is smaller than -cutoff, which
+            indicates a significantly unstable phonon mode
+
+        """
+
         if frequencies_to_clean is None:
             clean_frequencies = self.get_frequencies(unit=unit)
         else:
             clean_frequencies = frequencies_to_clean
         if cutoff is None:
-            # Set the cutoff to 0.1 THz and then convert to the input unit
             cutoff = self.convert_units(0.1, from_unit='THz', to_unit=unit)
         if min_value is None:
-            # Set the minimum value to 1e-10 THz and then convert to the input unit
             min_value = self.convert_units(1e-10, from_unit='THz', to_unit=unit)
         indices = np.nonzero(clean_frequencies < min_value)
         throw_warning = False
@@ -582,17 +748,19 @@ class PhonopyCalculation:
             if frequency < -cutoff:
                 throw_warning = True
         if throw_warning:
-            warn_string = "Negative frequencies smaller than -"+str(cutoff)+" "+unit+" detected: material is likely unstable"
+            warn_string = "Negative frequencies smaller than -"+str(cutoff)+" "\
+                          +unit+" detected: material is likely unstable"
             warnings.warn(warn_string)
         return clean_frequencies
     
     def clean_frequencies(self, cutoff=0.1):
+        """ Call get_clean_frequencies() on self.clean_frequencies """
         self.frequencies = self.get_clean_frequencies(cutoff=cutoff)
         return self.frequencies
     
     def clean_qpoints(self):
-        # Ensures all q-point coordinates are in the range ]-0.5,0.5]
-        normalize_to_range = lambda x: ((x - 0.5) % -1) + 0.5 # Reduces x to the range ]-0.5,0.5]
+        """ Reduce all q-point coordinates to the range ]-0.5,0.5] """
+        normalize_to_range = lambda x: ((x - 0.5) % -1) + 0.5
         self.qpoints = normalize_to_range(self.qpoints)
         return self.qpoints
     
