@@ -1181,32 +1181,62 @@ class PhonopyMeshCalculation(PhonopyCalculation):
 
         Returns
         -------
-        self: PhonopyCalculation
+        self: PhonopyMeshCalculation
         """
         super().__init__(yaml_filename)
         
-    def calculate_DOS(self, unit="THz", sigma=None, sigma_factor=0.01, omega=None, num_omegas=501):
-        # Calculate the phonon DOS with the smearing method
+    def calculate_DOS(self, unit="THz", sigma=None, omega=None, num_omegas=501):
+        """ Calculate the phonon DOS with the smearing method
+
+        Arguments
+        ---------
+        unit: str
+            Phonon frequency unit, default "THz"
+        sigma: real
+            Gaussian smearing used in the smearing method, in units
+            of the phonon frequency
+            Default: 0.01*(omega_max - omega_min)
+        omega: np.array of real
+            Frequencies at which the phonon DOS is to be evaluated
+            Default: rounded range of num_omegas points between the
+            minimum and maximum phonon frequency
+        num_omegas: int
+            Number of points used in the default frequency range
+            Only used when omega is None
+            Default: 501
+
+        Returns
+        -------
+        omega: np.array of real
+            Frequencies at which the phonon DOS is evaluated
+        DOS: np.array of real
+            Phonon density of states at frequencies omega
+
+        """
         phonon_freqs = self.get_frequencies(unit)
         omega_max = np.max(phonon_freqs)
         omega_min = np.min(phonon_freqs)
         if not omega:
             # Set the default range of omega if none is provided
-            # We include the lowest and highest phonon frequency, and round to make the result look nicer
             rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
             omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
             omega_max_scale = np.ceil(omega_max/rounding_scale)*rounding_scale 
-            omega = np.linspace(omega_min_scale, omega_max_scale, num=num_omegas, endpoint=True)
+            omega = np.linspace(omega_min_scale, omega_max_scale, 
+                                num=num_omegas, endpoint=True)
         if not sigma:
             # Set the default value of sigma if none is provided
-            sigma = sigma_factor*(omega_max - omega_min)
+            sigma = 0.01*(omega_max - omega_min)
         two_sigma_squared = 2*sigma*sigma
         # Define the smeared delta function:
-        delta_smeared = lambda x : np.exp(- x*x/two_sigma_squared)/np.sqrt(np.pi*two_sigma_squared)
+        delta_smeared = lambda x : \
+            np.exp(- x*x/two_sigma_squared)/np.sqrt(np.pi*two_sigma_squared)
         # Define the DOS as calculated with the trapezoid rule:
-        DOS_func = lambda x : np.sum(self.weights*np.sum(delta_smeared(x-phonon_freqs),axis=1))/np.sum(self.weights)
+        DOS_func = lambda x : \
+            np.sum(self.weights*np.sum(delta_smeared(x-phonon_freqs),axis=1))/\
+                np.sum(self.weights)
         #Iterate DOS_func over all elements in omega:
-        with np.nditer([omega, None], op_dtypes=float, flags=['buffered']) as iterator:
+        with np.nditer([omega, None], op_dtypes=float, flags=['buffered']) \
+            as iterator:
             for freq, output in iterator:
                 output[...] = DOS_func(freq)
             DOS =  iterator.operands[1]
@@ -1214,10 +1244,43 @@ class PhonopyMeshCalculation(PhonopyCalculation):
     
         
 class PhonopyBandCalculation(PhonopyCalculation):
+    """ Class to load PhonoPy band calculations
+    
+    Can plot the phonon density of states along a high-symmetry path
+    Has the same attributes as PhonopyCalculation
+    """
+        
     def __init__(self, yaml_filename):
+        """ PhonopyBandCalculation(yaml_filename, born_filename)
+
+        Arguments
+        ---------
+        yaml_filename: string
+            .yaml file exported by PhonoPy
+        born_filename: string
+            BORN file that contains the Born effective charge tensors
+            and dielectric tensors.
+            Important: this function expects a BORN file with a line
+            for each atom, since no symmetry is implemented. PhonoPy
+            exports a BORN file with less lines based on symmetry,
+            which is not compatible with this code.
+
+        Returns
+        -------
+        self: PhonopyBandCalculation
+        """
         super().__init__(yaml_filename)
         
     def get_xaxis_labels(self):
+        """ Parse labels and path distances to plot-ready format
+
+        Returns
+        -------
+        xaxis_ticks: np.array of real
+            Locations to plot the labels on the x-axis
+        xaxis_labels: list of str
+            Labels of high-symmetry points to plot on the x-axis
+        """
         # Generate the labels
         xaxis_labels = []
         xaxis_labels.append(self.labels[0][0])
@@ -1237,8 +1300,38 @@ class PhonopyBandCalculation(PhonopyCalculation):
         return xaxis_ticks, xaxis_labels
     
     def plot(self, unit="THz", title="Phonon dispersion", save_filename=None, 
-             text_sizes=(13, 15, 16), plot_range=None):
-        # Plot the band structure in a figure
+             plot_range=None, text_sizes=(13, 15, 16)):
+        """ Plot the band structure in a figure
+
+        Arguments
+        ---------
+        unit: str
+            Phonon frequency unit, default "THz"
+        title: str
+            Title of the plot
+            Default: "Phonon dispersion"
+        save_filename: str
+            Save the figure with the given filename, in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        plot_range: tuple of 2 reals
+            Minimum and maximum limits of the figure y-axis
+            Default: rounded range of num_omegas points between the
+            minimum and maximum phonon frequency
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        
+        Returns
+        -------
+        fig: figure handle
+        ax: axis handle
+        plot_handle: handle to the plot data
+
+        """
         plot_color = "blue"
         plot_linestyle = "solid"
         
@@ -1246,12 +1339,14 @@ class PhonopyBandCalculation(PhonopyCalculation):
         omegas = self.get_frequencies(unit)
         
         fig, ax = plt.subplots()
-        plot_handle = ax.plot(qs, omegas, color=plot_color, linestyle=plot_linestyle)
+        plot_handle = ax.plot(qs, omegas, color=plot_color, 
+                              linestyle=plot_linestyle)
         
         xaxis_ticks, xaxis_labels = self.get_xaxis_labels()
         
         ax.set_title(title, size=text_sizes[2])
-        ax.set_ylabel('Phonon frequencies ('+str(unit)+')', fontsize=text_sizes[1])
+        ax.set_ylabel('Phonon frequencies ('+str(unit)+')', 
+                      fontsize=text_sizes[1])
         ax.set_xticks(xaxis_ticks, xaxis_labels)
         ax.tick_params(axis='both', labelsize=text_sizes[0])
         ax.set_xlim(np.min(qs),np.max(qs))
@@ -1259,7 +1354,8 @@ class PhonopyBandCalculation(PhonopyCalculation):
         if plot_range is None:
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+            if omega_min < -self.convert_units(0.1, from_unit="THz", 
+                                               to_unit=unit):
                 # Include the unstable phonon modes in the plot
                 omega_min_scale, omega_max_scale = \
                     round_plot_range(omega_min, omega_max)
@@ -1931,7 +2027,7 @@ class YCalculation():
         freqs_invsqrt = outer_product(1/np.sqrt(freqs))
         return -0.5j * 0.004135667 * freqs_invsqrt* (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
     
-    def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None, sigma_factor=0.01,
+    def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None,
                          omega=None, num_omegas=1001, moments=None, moments_scaling_frequency=None, q_split_levels=0, 
                          parallel_jobs=1, savedata_filename=None, savetxt_filename=None, savefigures_filename=None, 
                          text_sizes=(13, 15, 16), title=None, colors=None, ):
@@ -1957,7 +2053,7 @@ class YCalculation():
         omega = self.zerocalc.convert_units(omega_input_units, from_unit=unit, to_unit="THz")
         if not sigma:
             # Set the default value of sigma if none is provided
-            sigma = sigma_factor*(omega_max - omega_min)
+            sigma = 0.01*(omega_max - omega_min)
         else:
             # We must convert sigma from the input units to THz
             sigma = self.zerocalc.convert_units(sigma, from_unit=unit, to_unit="THz")
