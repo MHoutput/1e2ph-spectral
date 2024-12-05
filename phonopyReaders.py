@@ -1720,41 +1720,121 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             # Otherwise, return an array of dynamical matrices
             return interpolated_quantities        
     
-    def get_force_constants(self, quantity=None, unit="THz", include_nac="None"):
-        # This function returns the short-range force constants, or what are considered the short-range force constants
-        # for the method and quantity we use
-        # The force constants are already divided by the inverse square root of the atom masses
+    def get_force_constants(self, quantity=None, unit="THz", 
+                            include_nac="None"):
+        """ Calculate short-range force constants
+
+        This function returns the short-range force constants, or what
+        are considered the short-range force constants for the method 
+        and quantity we use. The force constants are already divided
+        by the inverse square root of the atom masses
+
+        Arguments
+        ---------
+        quantity: np.array of complex
+            shape (numqpoints, numbands, numbands)
+            A quantity of the same shape as the dynamical matrices 
+            evaluated at self.qpoints, the commensurate q-points
+            Default: the dynamical matrices evaluated at self.qpoints
+        unit: str
+            Unit for the phonon frequencies
+            Default: "THz"
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+
+        Returns
+        -------
+        force_constants: np.array of real
+            shape (numqpoints, numbands, numbands)
+
+        """
+
         if quantity is None:
-            quantity = self.get_dynamical_matrices(unit=unit, convention="d-type")
+            quantity = self.get_dynamical_matrices(unit=unit, 
+                                                   convention="d-type")
         
         match include_nac:
             case "Gonze":
-                dyn_long_range = self.get_nac_dynamical_matrix_Gonze(self.qpoints, unit=unit, convention="d-type",
-                                                                     nac_q_direction=None)
-                # for zero_index in np.nonzero(np.linalg.norm(self.qpoints, ord=2, axis=1) < 1e-10)[0]:
-                #     # No additional contribution in the Gamma point
-                #     dyn_long_range[zero_index] = np.zeros((self.numbands, self.numbands))
+                # Use get_nac_dynamical_matrix_Gonze with nac_q_direction=None
+                # to get only the analytic part of the dynamical matrix
+                dyn_long_range =\
+                    self.get_nac_dynamical_matrix_Gonze(self.qpoints, unit=unit,
+                                                        convention="d-type",
+                                                        nac_q_direction=None)
             case _:
-                # This case includes both Wang's method for the NAC, and no NAC correction
+                # Both in Wang's method and in the case of no NAC correction,
+                # there are no long-range force constants to subtract
                 dyn_long_range = 0.
         dyn_matrix = quantity - dyn_long_range
-        fourier_matrix = np.exp(-2*np.pi*1j* self.get_qpoints() @ self.get_lpoints().T )
-        return np.real(np.tensordot(fourier_matrix, dyn_matrix, 1) /self.numqpoints)
+        fourier_matrix = np.exp(-2*np.pi*1j* self.get_qpoints() @\
+                                self.get_lpoints().T )
+        return np.real(np.tensordot(fourier_matrix, dyn_matrix, 1)/ \
+                       self.numqpoints)
     
     def get_nac_dynamical_matrix_Wang(self, q, unit="THz", convention="d-type", 
                                       nac_q_direction=np.array([1.0,0.0,0.0])):
+        """ Get NAC correction with Wang's method
+
+        Based on the method detailed in:
+        Y Wang et al., J. Phys.: Condens. Matter 22 202201 (2010)
+
+        This method is faster than Gonze's method but sometimes gives
+        unphysical unstable phonon modes. Gonze's method is recommended
+
+        Arguments
+        ---------
+        q: np.array of real, shape (3,) or (:,3)
+            q-point, or array of q-points, in which to evaluate the
+            Fourier-interpolated dynamical matrix
+        unit: str
+            Unit for the phonon frequencies
+            Default: "THz"
+        convention: str
+            c-type or d-type convention for the dynamical matrix
+            Default: c-type
+        nac_q_direction: np.array of real
+            In case the dynamical matrix is not analytic at Gamma,
+            store the values with limiting direction nac_q_direction
+            Default: np.array([1.0, 0.0, 0.0])
+
+        Returns
+        -------
+        dynamical matrix: np.array of complex
+            shape (len(q), numbands, numbands),
+            or (numbands, numbands) if q is a single q-point
+            Interpolated dynamical matrix evaluated at the desired
+            q-points
+
+        Raises
+        ------
+        ValueError
+            when calling this function without loading a BORN file
+
+        """
         if not self.born_is_set:
-            raise ValueError("BORN file must be read to calculate the non-analytic contribution")
+            raise ValueError("""BORN file must be read to calculate 
+                             the non-analytic contribution""")
+        # Ensure that the output has the desired dimension
         return_1D = False
         if len(q.shape) < 2:
-            return_1D = True  # Return only the dynamical matrix, not a 1-element array of dynamical matrices
+            return_1D = True
             q = np.array([q])  # Ensure q is a 2D array at least
-        for zero_index in np.nonzero(np.linalg.norm(q, ord=2, axis=1) < 1e-10)[0]:
+        for zero_index in np.nonzero(np.linalg.norm(q, ord=2, axis=1)<1e-10)[0]:
             # In the Gamma point, use a tiny vector in direction nac_q_direction
             q[zero_index] = 1e-12*nac_q_direction
         masses = np.diag(self.get_mass_matrix())
-        inv_mass_matrix = 1/np.sqrt(masses.reshape(1, self.numbands) * masses.reshape(self.numbands, 1))
-        born_charges_3x3N = np.reshape(self.born_charges.T, (self.num_dimensions,self.numbands), order='F')
+        inv_mass_matrix = 1/np.sqrt(masses.reshape(1, self.numbands)* \
+                                    masses.reshape(self.numbands, 1))
+        born_charges_3x3N = np.reshape(self.born_charges.T,
+                                       (self.num_dimensions,self.numbands), 
+                                       order='F')
             
         outer_product = lambda A: A[...,:,None]*A[...,None,:]
         
@@ -1762,7 +1842,8 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         Q = q @ self.get_reciprocal_lattice_vectors()        
         dynmat_proposal = (
             # Prefactor to get the units right:    
-            (1.7459144492158638e+30/self.unitcell_volume)*self.convert_units(1, from_unit="rad/s", to_unit=unit)**2
+            (1.7459144492158638e+30/self.unitcell_volume)*\
+                self.convert_units(1, from_unit="rad/s", to_unit=unit)**2
             # Multiply by the inverse mass matrix:
             * inv_mass_matrix
             # Numerator: Z.Q x Q.Z
@@ -1785,24 +1866,68 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
     
     def get_nac_dynamical_matrix_Gonze(self, q, unit="THz", convention="d-type", 
                                        nac_q_direction=np.array([1.0,0.0,0.0])):
-        #Set nac_q_direction = None to return only the analytic part at q=0
+        """ Get NAC correction with Gonze's method
+
+        Based on the method detailed in:
+        X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+
+        Set nac_q_direction = None to return only the analytic part 
+        at q=0
+
+        Arguments
+        ---------
+        q: np.array of real, shape (3,) or (:,3)
+            q-point, or array of q-points, in which to evaluate the
+            Fourier-interpolated dynamical matrix
+        unit: str
+            Unit for the phonon frequencies
+            Default: "THz"
+        convention: str
+            c-type or d-type convention for the dynamical matrix
+            Default: c-type
+        nac_q_direction: np.array of real
+            In case the dynamical matrix is not analytic at Gamma,
+            store the values with limiting direction nac_q_direction
+            Default: np.array([1.0, 0.0, 0.0])
+
+        Returns
+        -------
+        dynamical matrix: np.array of complex
+            shape (len(q), numbands, numbands),
+            or (numbands, numbands) if q is a single q-point
+            Interpolated dynamical matrix evaluated at the desired
+            q-points
+
+        Raises
+        ------
+        ValueError
+            when calling this function without loading a BORN file
+
+        """
         
         no_nac_flag = nac_q_direction is None
         
         if not self.born_is_set:
-            raise ValueError("BORN file must be read to calculate the non-analytic contribution")
+            raise ValueError("""BORN file must be read to calculate 
+                             the non-analytic contribution""")
+        # Ensure that the output has the desired dimension
         return_1D = False
         if len(q.shape) < 2:
-            return_1D = True  # Return only the dynamical matrix, not a 1-element array of dynamical matrices
+            return_1D = True
             q = np.array([q])  # Ensure q is a 2D array at least
         if not no_nac_flag: 
             # In the Gamma point, use a tiny vector in direction nac_q_direction
-            for zero_index in np.nonzero(np.linalg.norm(q, ord=2, axis=1) < 1e-10)[0]:
+            for zero_index in np.nonzero(np.linalg.norm(q, ord=2, axis=1)\
+                                          < 1e-10)[0]:
                     q[zero_index] = 1e-12*nac_q_direction
-        dynmats = np.empty((len(q), self.numbands, self.numbands), dtype=np.complex_)   
+        dynmats = np.empty((len(q), self.numbands, self.numbands), 
+                           dtype=np.complex_)   
         masses = np.diag(self.get_mass_matrix())
-        inv_mass_matrix = 1/np.sqrt(masses.reshape(1, self.numbands) * masses.reshape(self.numbands, 1))
-        born_charges_3x3N = np.reshape(self.born_charges.T, (self.num_dimensions,self.numbands), order='F')
+        inv_mass_matrix = 1/np.sqrt(masses.reshape(1, self.numbands)* \
+                                    masses.reshape(self.numbands, 1))
+        born_charges_3x3N = np.reshape(self.born_charges.T,
+                                       (self.num_dimensions,self.numbands),
+                                       order='F')
         tauk_difference_cart = self.get_tauk_difference() @ self.lattice_vectors
         
         
@@ -1815,31 +1940,39 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         QepsQ_function = lambda x: np.exp(-x/(4*self.nac_lambda**2))/x
         dyn_nac_Q = lambda Q_cart: (
             # Prefactor to get the units right:    
-            1.7459144492158638e+30/self.unitcell_volume * self.convert_units(1, from_unit="rad/s", to_unit=unit)**2
+            1.7459144492158638e+30/self.unitcell_volume * \
+                self.convert_units(1, from_unit="rad/s", to_unit=unit)**2
             # Numerator: Z.Q x Q.Z
             * outer_product(Q_cart @ born_charges_3x3N)
             # Denominator: Q.eps.Q, with exponential damping
-            * QepsQ_function(np.sum((Q_cart @ self.dielectric_tensor) * Q_cart, -1))[...,None,None]
-            # Fourier factors in the d-type convention, if necessary we transform to c-type later
-            * np.exp(2*np.pi*1j* np.dot(Q_cart, np.swapaxes(tauk_difference_cart, 1, 2)))
+            * QepsQ_function(np.sum((Q_cart @ self.dielectric_tensor) * \
+                                    Q_cart, -1))[...,None,None]
+            # Fourier factors in the d-type convention
+            * np.exp(2*np.pi*1j* \
+                     np.dot(Q_cart, np.swapaxes(tauk_difference_cart, 1, 2)))
             )
         
-        # Make the traceless tensor: dyn_trace = delta_{k,k'} sum_k'' sum_G C_{k,k''}(G)
+        # Make the traceless tensor:
+        # dyn_trace = delta_{k,k'} sum_k'' sum_G C_{k,k''}(G)
         tensor_trace = np.sum(np.reshape(np.sum(dyn_nac_Q(Gs_cart), axis=0),
-                                         (self.numbands,self.natom,self.num_dimensions)), axis=1)
+                            (self.numbands,self.natom,self.num_dimensions)), 
+                            axis=1)
         dyn_trace = np.zeros((self.numbands, self.numbands), dtype=np.complex_)
         for k in range(self.natom):
-            to_slice = slice(self.num_dimensions*k, self.num_dimensions*(k+1), 1)
+            to_slice = slice(self.num_dimensions*k, self.num_dimensions*(k+1), 
+                             1)
             dyn_trace[to_slice, to_slice] = tensor_trace[to_slice, :]
         
-        # Keeping this for loop actually makes our code slightly faster and uses much less memory
-        dynmat_proposal = np.zeros((len(q), self.numbands, self.numbands), dtype=np.complex_)
+        dynmat_proposal = np.zeros((len(q), self.numbands, self.numbands), 
+                                   dtype=np.complex_)
         for index, q_point in enumerate(q_cart):
             if np.linalg.norm(q_point) < 1e-10 and no_nac_flag:
                 G0_contribution = 0.
             else:
                 G0_contribution = dyn_nac_Q(np.array([q_point]))
-            dynmat_proposal[index, ...] = inv_mass_matrix*(G0_contribution + np.sum(dyn_nac_Q(q_point+Gs_cart),0) - dyn_trace)
+            dynmat_proposal[index, ...] = \
+                inv_mass_matrix*(G0_contribution+\
+                                 np.sum(dyn_nac_Q(q_point+Gs_cart),0)-dyn_trace)
         match convention:
             case "c-type":
                 dynmats = dynmat_proposal * self.get_d_to_c_factors(q)
@@ -1852,24 +1985,71 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         else:
             return dynmats  
     
-    def get_freqs_eigvecs_interpolated(self, q, unit="THz", convention="c-type", include_nac="None", clean_value=None):
-        q_clean = (np.abs(q)+1e-12)*(2*np.heaviside(q, 1)-1)  # Ensure any element of q is never smaller than 1e-12
+    def get_freqs_eigvecs_interpolated(self, q, unit="THz", convention="c-type",
+                                        include_nac="None", clean_value=None):
+        """ Calculate interpolated phonon frequencies and eigenvectors
+
+        Arguments
+        ---------
+        q: np.array of real, shape (3,) or (:,3)
+            q-point, or array of q-points, in which to evaluate the
+            Fourier-interpolated frequencies and eigenvectors
+        unit: str
+            Unit for the phonon frequencies
+            Default: "THz"
+        convention: str
+            c-type or d-type convention for the phonon eigenvectors
+            Default: c-type
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        clean_value: real, or None
+            If real, clean frequencies to remove imaginary modes
+            and set the minimum frequency value to clean_value
+            Default: None
+
+        Returns
+        -------
+        omegas: np.array of real
+            shape (:, numbands)
+            Phonon frequencies evaluated at input q
+
+        eigvecs: np.array of complex
+            shape (:, numbands, numbands)
+        
+        
+        """
+        # Ensure any element of q is never smaller than 1e-12
+        q_clean = (np.abs(q)+1e-12)*(2*np.heaviside(q, 1)-1)  
+        # Ensure that the output has the desired dimension
         return_1D = False
         if len(q_clean.shape) < 2:
-            return_1D = True  # Return only the dynamical matrix, not a 1-element array of dynamical matrices
-            q_clean = np.array([q_clean])  # Ensure q_clean is a 2D array at least
+            return_1D = True
+            q_clean = np.array([q_clean])  # Ensure q_clean is a 2D array
         omegas = np.empty((len(q_clean), self.numbands), dtype=float)
-        eigvecs = np.empty((len(q_clean), self.numbands, self.numbands), dtype=np.complex_)
-        dynmats = self.fourier_interpolate(q_clean, unit=unit, convention=convention, include_nac=include_nac)
+        eigvecs = np.empty((len(q_clean), self.numbands, self.numbands), 
+                           dtype=np.complex_)
+        dynmats = self.fourier_interpolate(q_clean, unit=unit, 
+                                           convention=convention, 
+                                           include_nac=include_nac)
         for index, dynmat in enumerate(dynmats):
             eigenvalues, eigenvectors = np.linalg.eigh(dynmat)
-            omegas_unsorted = np.real(np.sign(eigenvalues)*np.sqrt(np.abs(eigenvalues)))
+            omegas_unsorted = np.real(np.sign(eigenvalues)*\
+                                      np.sqrt(np.abs(eigenvalues)))
             sort_indices = np.argsort(omegas_unsorted)
             omegas[index, :] = omegas_unsorted[sort_indices]
             eigvecs[index, ...] = eigenvectors[:, sort_indices].T
         if clean_value is not None:
             # Clean frequencies and set the minimum value to clean_value
-            omegas = self.get_clean_frequencies(frequencies_to_clean = omegas, unit=unit, min_value=clean_value)
+            omegas = self.get_clean_frequencies(frequencies_to_clean = omegas, 
+                                                unit=unit, 
+                                                min_value=clean_value)
         if return_1D:
             # If there was only one q-point, return just that set of frequencies
             return omegas[0], eigvecs[0]
