@@ -2072,18 +2072,6 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
                 while (overlap_matrix > -0.5).any():
                     max_value = np.max(overlap_matrix)
                     max_indices = np.where(overlap_matrix==max_value)
-                    # if max_value < max_value_cutoff and index > 1:
-                    #     # The overlap is too small to accept this permutation
-                    #     # Instead, we use the overlap between the previous eigenvector and the next one
-                    #     if np.abs(np.linalg.norm(qs[index])-np.linalg.norm(qs[index-1])) < 1e-10:
-                    #         prev_index = index-2
-                    #     else:
-                    #         prev_index = index-1
-                    #     solved_indices = np.where(overlap_matrix < -0.5)
-                    #     overlap_matrix = np.abs(eigenvectors[prev_index] @ eigenvectors[index+1].conj().T)**2
-                    #     overlap_matrix[solved_indices] = -1
-                    #     max_value = np.max(overlap_matrix)
-                    #     max_indices = np.where(overlap_matrix==max_value)
                     permutation_matrix[max_indices] = 1
                     overlap_matrix[max_indices[0],:] = -1
                     overlap_matrix[:,max_indices[1]] = -1                    
