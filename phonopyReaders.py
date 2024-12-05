@@ -412,9 +412,9 @@ class PhonopyCalculation:
 
         Returns
         -------
-        frequencies: np.array of real
+        dynamical_matrices: np.array of complex
             shape (numqpoints, numbands, numbands)
-            Imaginary frequencies are output as negative frequencies
+            Dynamical matrices evaluated at self.qpoints
 
         Raises
         ------
@@ -1378,8 +1378,102 @@ class PhonopyBandCalculation(PhonopyCalculation):
         return fig, ax, plot_handle
 
 class PhonopyCommensurateCalculation(PhonopyCalculation):
-    def __init__(self, yaml_filename, born_filename=None, nac_q_direction=np.array([1.0,0.0,0.0]), nac_G_cutoff=None, 
+    """ Class to process PhonoPy calculation at commensurate points
+
+    This class reads in the PhonoPy data of a calculation at only
+    the commensurate points in the Brillouin zone. It has several
+    functionalities of PhonoPy reimplemented, such as Fourier
+    interpolation and plotting phonon bands. It also allows for the
+    calculation of longitudinal/transverse and acoustic/optical
+    weights.
+    
+    Attributes
+    ----------
+    supercell_size: np.array of int
+        shape (3,)
+    reciprocal_lattice_vectors: np.array of real
+        shape (3,3), units of inverse Angstroms
+    lattice_vectors: np.array of real
+        shape (3,3), units of Angstroms
+    unitcell_volume: real
+        units of cubic Angstroms
+    num_dimensions: int
+        Equal to 3
+    natom: int
+    numqpoints: int
+    labels: list of (list of str) if band calculation, else None
+    segment_nqpoint: list of int if band calculation, else None
+    numbands: int
+        Equal to 3*natom
+    qpoints: np.array of real
+        shape (numqpoints, 3), in direct coordinates
+    distances: np.array of real
+        shape (numqpoints,)
+    weights: np.array of int
+        shape (numqpoints,)
+    frequencies: np.array of real
+        shape (numqpoints, numbands), stored as cycle frequencies in THz
+    eigenvectors: np.array of complex, 
+        shape (numqpoints, numbands, natom, 3)
+    atom_names: np.array of str
+        shape (natom,)
+    atom_masses: np.array of real
+        shape (natom,), in atomic mass units
+    atom_positions: np.array of real
+        shape (natom, 3), in direct coordinates
+    born_is_set: bool
+        True if born_filename is read
+    born_charges: np.array of real
+        shape (natom, 3, 3)
+    dielectric_tensor: np.array of real
+        shape (3,3)
+    Gpoints: np.array of int
+        shape (:,3), used for G-sums, stored in direct coordinates
+    nac_q_direction: np.array of real
+        shape (3,)
+    nac_G_cutoff: real
+    nac_lambda: real
+    optimal_sc_vectors: list of list of list of np.array of int
+        First list index: lattice vector L
+        Second list index: atom index k'
+        Third list index: atom index k
+        np.array shapes: (:,3)
+
+    """
+    def __init__(self, yaml_filename, born_filename=None, 
+                 nac_q_direction=np.array([1.0,0.0,0.0]), nac_G_cutoff=None, 
                  nac_lambda=None):
+        """PhonopyCommensurateCalculation(yaml_filename, born_filename)
+
+        Arguments
+        ---------
+        yaml_filename: string
+            .yaml file exported by PhonoPy
+        born_filename: string
+            BORN file that contains the Born effective charge tensors
+            and dielectric tensors.
+            Important: this function expects a BORN file with a line
+            for each atom, since no symmetry is implemented. PhonoPy
+            exports a BORN file with less lines based on symmetry,
+            which is not compatible with this code.
+        nac_q_direction: np.array of real
+            In case the dynamical matrix is not analytic at Gamma,
+            store the values with limiting direction nac_q_direction
+            Default: np.array([1.0, 0.0, 0.0])
+        nac_G_cutoff: real
+            Cutoff radius for reciprocal lattice sums
+            Default: Same as PhonoPy, chosen to include approximately 
+            300 reciprocal lattice points
+        nac_lambda: real
+            Exponential decay for reciprocal lattice sums
+            Default: Same as PhonoPy, based on self.dielectric_tensor
+            and self.nac_G_cutoff
+
+
+        Returns
+        -------
+        self: PhonopyCommensurateCalculation
+        """
         super().__init__(yaml_filename, born_filename)
         self.optimal_sc_vectors = self.get_optimal_sc_vectors()
         self.set_nac_q_direction(nac_q_direction)
@@ -1388,10 +1482,17 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         
         
     def set_nac_q_direction(self, nac_q_direction):
+        """ Set nac_q_direction to a different value """
         if nac_q_direction is not None:
             self.nac_q_direction = nac_q_direction
         
     def set_nac_G_cutoff(self, nac_G_cutoff):
+        """ Set nac_G_cutoff to a different value
+
+        Automatically recalculates self.Gpoints. If input is None, 
+        set to the default value used by PhonoPy. This default is
+        nac_G_cutoff = (3*300/(4*np.pi*self.unitcell_volume))**(1.0/3).
+        """
         if nac_G_cutoff is None:
             num_Gs = 300
             nac_G_cutoff = (3*num_Gs / (4*np.pi*self.unitcell_volume))**(1.0/3)
@@ -1399,8 +1500,13 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         self.Gpoints = self.get_Gpoints(nac_G_cutoff, include_zero=False)
         
     def set_nac_lambda(self, nac_lambda):
+        """ Set nac_G_lambda to a different value
+        
+        If input is None, set to the default value used by PhonoPy,
+        which is nac_G_cutoff*np.sqrt(0.025*eps_avg/log(10))
+        """
         if nac_lambda is None:
-            log_cutoff = -10*np.log(10)  # log(1e-10)
+            log_cutoff = -10*np.log(10)
             if self.dielectric_tensor is None:
                 eps_avg = 1.0
             else:
@@ -1409,16 +1515,42 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         self.nac_lambda = nac_lambda
         
     def get_optimal_sc_vectors(self, distance_tolerance = 1e-10):
-        # For every atomic distance vector L+tau_k'-tau_k, find which supercell vectors T minimize |L+tau_k'-tau_k+T|
-        # Structure: first index L, second index k', third index k
+        """ Find supercell vectors T that minimize |L+tau_k'-tau_k+T|
+
+        For every atomic distance vector L+tau_k'-tau_k, find the
+        supercell vector that minimizes the distance |L+tau_k'-tau_k+T|.
+        These supercell vectors are used for the Fourier interpolation
+        algorithm, but are not important for the user
+
+        Arguments
+        ---------
+        distance_tolerance: real
+            Tolerance to decide whether two points are equally distant
+            Default: 1e-10
+        
+        Returns
+        -------
+        optimal_sc_vectors: list of list of list of np.array of int
+            Nested list of optimal supercell vectors, for every atomic
+            distance vector L+tau_k'-tau_k
+                - First list index: lattice vector L
+                - Second list index: atom index k'
+                - Third list index: atom index k
+            Each list element is a np.array of int with shape (:,3)
+            that contains all the supercell vectors that minimize
+            |L+tau_k'-tau_k+T| in direct coordinates
+
+        """
         metric = self.lattice_vectors @ self.lattice_vectors.T
         norm = lambda vec: np.sqrt(vec @ metric @ vec.T)
         sc_weights = [-1, 0, 1]
-        Tpoint_candidates = np.zeros((len(sc_weights)**self.num_dimensions, self.num_dimensions), dtype=int)
+        Tpoint_candidates = np.zeros((len(sc_weights)**self.num_dimensions, 
+                                      self.num_dimensions), dtype=int)
         for index1, i in enumerate(sc_weights):
             for index2, j in enumerate(sc_weights):
                 for index3, k in enumerate(sc_weights):
-                    Tpoint_candidates[index3 + len(sc_weights)*(index2+ len(sc_weights)*index1)] \
+                    Tpoint_candidates[index3 + len(sc_weights)*\
+                                      (index2+ len(sc_weights)*index1)] \
                             = np.array([k,j,i])*self.supercell_size
         optimal_sc_vectors = []
         for lpoint in self.get_lpoints():
@@ -1426,78 +1558,159 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             for tau_k2 in self.get_atom_positions():
                 Tpoint_list_3 = []
                 for tau_k1 in self.get_atom_positions():
-                    distances = np.array([norm(lpoint+tau_k2-tau_k1+Tpoint) for Tpoint in Tpoint_candidates])
+                    distances = np.array([norm(lpoint+tau_k2-tau_k1+Tpoint) 
+                                          for Tpoint in Tpoint_candidates])
                     min_distance = distances.min()
-                    optimal_Tpoints = Tpoint_candidates[np.abs(distances-min_distance) < distance_tolerance]
+                    optimal_Tpoints = \
+                        Tpoint_candidates[np.abs(distances-min_distance) \
+                                          < distance_tolerance]
                     Tpoint_list_3.append(optimal_Tpoints)
                 Tpoint_list_2.append(Tpoint_list_3)
             optimal_sc_vectors.append(Tpoint_list_2)
         return optimal_sc_vectors
     
     def set_optimal_sc_vectors(self, distance_tolerance = 1e-10):
-        self.optimal_sc_vectors = self.get_optimal_sc_vectors(distance_tolerance)
+        """ Set optimal supercell vectors in object """
+        self.optimal_sc_vectors=self.get_optimal_sc_vectors(distance_tolerance)
                 
-    def fourier_interpolate(self, q, quantity=None, unit="THz", convention="c-type", include_nac="None", 
-                                     nac_q_direction=None, nac_G_cutoff=None, nac_lambda=None):
-        # Fourier interpolate a quantity that is similar to the dynamical matrix
-        # It is assumed that the quantity is given in the convention that matches the input convention
-        # If no quantity is given, the dynamical matrix will be calculated and interpolated
-        # Warning:  The NAC correction is only implemented for the dynamical matrix. For Fourier interpolation of other
-        #           quantities, we automatically choose include_nac="None" to avoid incorrect results.
+    def fourier_interpolate(self, q, quantity=None, unit="THz", 
+                            convention="c-type", include_nac="None", 
+                            nac_q_direction=None, nac_G_cutoff=None, 
+                            nac_lambda=None):
+        """ Fourier interpolate dynamical matrix or similar quantity
+
+        It is assumed that the quantity is given in the convention that
+        matches the input convention. If no quantity is given, the
+        dynamical matrix will be calculated and interpolated
+        Warning: The NAC correction is only implemented for the
+        dynamical matrix. For Fourier interpolation of other 
+        quantities, we automatically choose include_nac="None" to avoid
+        incorrect results.
+
+        Arguments
+        ---------
+        q: np.array of real, shape (3,) or (:,3)
+            q-point, or array of q-points, in which to evaluate the
+            Fourier-interpolated dynamical matrix
+        quantity: np.array of complex
+            shape (numqpoints, numbands, numbands)
+            A quantity of the same shape as the dynamical matrices 
+            evaluated at self.qpoints, the commensurate q-points
+            Default: the dynamical matrices evaluated at self.qpoints
+        unit: str
+            Unit for the phonon frequencies
+            Default: "THz"
+        convention: str
+            c-type or d-type convention for the dynamical matrix
+            Default: c-type
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        nac_q_direction: np.array of real
+            In case the dynamical matrix is not analytic at Gamma,
+            store the values with limiting direction nac_q_direction
+            Default: np.array([1.0, 0.0, 0.0])
+        nac_G_cutoff: real
+            Cutoff radius for reciprocal lattice sums
+            Default: Same as PhonoPy, chosen to include approximately 
+            300 reciprocal lattice points
+        nac_lambda: real
+            Exponential decay for reciprocal lattice sums
+            Default: Same as PhonoPy, based on self.dielectric_tensor
+            and self.nac_G_cutoff
+
+        Returns
+        -------
+        interpolated_quantity: np.array of complex
+            shape (len(q), numbands, numbands),
+            or (numbands, numbands) if q is a single q-point
+            Interpolated quantity evaluated at the desired q-points,
+            usually the dynamical matrix or its derivative
+
+        """
         
         if quantity is None:
-            quantity = self.get_dynamical_matrices(unit=unit, convention="d-type")
+            quantity = self.get_dynamical_matrices(unit=unit, 
+                                                   convention="d-type")
         else:
             include_nac="None"
             if convention=="c-type":
-                quantity = quantity * self.get_c_to_d_factors(self.get_qpoints())
+                quantity = quantity*self.get_c_to_d_factors(self.get_qpoints())
             
         self.set_nac_q_direction(nac_q_direction)
         self.set_nac_G_cutoff(nac_G_cutoff)
         self.set_nac_lambda(nac_lambda)
         
-        q_clean = (np.abs(q)+1e-12)*(2*np.heaviside(q, 1)-1)  # Ensure any element of q is never smaller than 1e-12
+        # Ensure any element of q is never smaller than 1e-12
+        q_clean = (np.abs(q)+1e-12)*(2*np.heaviside(q, 1)-1)
+
+        # Ensure that the output has the desired dimension
         return_1D = False
         if len(q_clean.shape) < 2:
-            return_1D = True  # Return only the dynamical matrix, not a 1-element array of dynamical matrices
+            return_1D = True
             q_clean = np.array([q_clean])  # Ensure q_clean is a 2D array
-        interpolated_quantities = np.empty((len(q_clean), self.numbands, self.numbands), dtype=np.complex_)     
-        force_constants = self.get_force_constants(quantity=quantity, unit=unit, include_nac=include_nac)
         
-        # Make the matrix of Fourier factors that will transform the force constants to the dynamical matrix:
+        # Get the force constants, or its equivalent for the desired quantity
+        interpolated_quantities = np.empty((len(q_clean), self.numbands, 
+                                            self.numbands), dtype=np.complex_)     
+        force_constants = self.get_force_constants(quantity=quantity, unit=unit,
+                                                   include_nac=include_nac)
+        
+        # Make the matrix of Fourier factors that will transform the
+        # force constants to the dynamical matrix:
         T_opts = self.optimal_sc_vectors
-        fourier_factors = np.zeros((len(q_clean), len(self.get_lpoints()), self.numbands, self.numbands), 
+        fourier_factors = np.zeros((len(q_clean), len(self.get_lpoints()), 
+                                    self.numbands, self.numbands), 
                                    dtype=np.complex_)
         for index2, lpoint in enumerate(self.get_lpoints()):
             for index3, tau_k2 in enumerate(self.get_atom_positions()):
                 for index4, tau_k1 in enumerate(self.get_atom_positions()):
-                    r_tots = lpoint + tau_k2 - tau_k1 + T_opts[index2][index3][index4]
-                    fourier_factors[:, index2, self.num_dimensions*index4:(self.num_dimensions*(index4+1)), 
-                                    self.num_dimensions*index3:(self.num_dimensions*(index3+1))] \
-                            = np.reshape(np.mean(np.exp(2*np.pi*1j* q_clean @ r_tots.T ),1), (-1,1,1))
+                    r_tots = lpoint + tau_k2 - tau_k1 + \
+                        T_opts[index2][index3][index4]
+                    fourier_factors[:, index2, self.num_dimensions*index4:\
+                                    (self.num_dimensions*(index4+1)), 
+                                    self.num_dimensions*index3:\
+                                    (self.num_dimensions*(index3+1))] \
+                        = np.reshape(
+                            np.mean(np.exp(2*np.pi*1j* q_clean @ r_tots.T ),1),
+                            (-1,1,1))
             
         # Make the dynamical matrix in the c-type convention
         quantity_proposal = np.sum(fourier_factors * force_constants, 1)
         match include_nac:
             case "Wang":
-                nac_mask = np.mean(fourier_factors, 1)
-                quantity_ctype = ( 0.5*(quantity_proposal + np.swapaxes(quantity_proposal,1,2).conj()) + 
-                                nac_mask*self.get_nac_dynamical_matrix_Wang(q_clean, unit=unit, convention="c-type",
-                                                                            nac_q_direction=self.nac_q_direction)
-                                )
+                wangMatrix = np.mean(fourier_factors, 1)*\
+                    self.get_nac_dynamical_matrix_Wang(q_clean, \
+                            unit=unit, convention="c-type",
+                            nac_q_direction=self.nac_q_direction)
+                quantity_ctype = (wangMatrix + 
+                    0.5*(quantity_proposal+
+                         np.swapaxes(quantity_proposal,1,2).conj()))
             case "Gonze":
-                gonzeMatrix = self.get_nac_dynamical_matrix_Gonze(q_clean, unit=unit, convention="c-type", 
-                                                    nac_q_direction=self.nac_q_direction)
-                quantity_ctype = ( 0.5*(quantity_proposal + np.swapaxes(quantity_proposal,1,2).conj()) + gonzeMatrix )
+                gonzeMatrix = self.get_nac_dynamical_matrix_Gonze(q_clean, \
+                    unit=unit, convention="c-type", 
+                    nac_q_direction=self.nac_q_direction)
+                quantity_ctype = (gonzeMatrix + 
+                    0.5*(quantity_proposal+
+                         np.swapaxes(quantity_proposal,1,2).conj()))
             case _:
-                quantity_ctype = 0.5*(quantity_proposal + np.swapaxes(quantity_proposal,1,2).conj())
+                #No NAC correction
+                quantity_ctype = 0.5*(quantity_proposal+
+                                      np.swapaxes(quantity_proposal,1,2).conj())
         
         # Transform the dynamical matrix to the d-type convention if necessary
         match convention:
             case "c-type":
                 interpolated_quantities = quantity_ctype
             case "d-type":
-                interpolated_quantities = quantity_ctype * self.get_c_to_d_factors(q)
+                interpolated_quantities = quantity_ctype*\
+                    self.get_c_to_d_factors(q)
             case _:
                 raise ValueError("convention must be c-type or d-type")
         if return_1D:
