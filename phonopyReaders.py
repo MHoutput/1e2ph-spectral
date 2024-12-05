@@ -1158,12 +1158,35 @@ class PhonopyCalculation:
         
 
 class PhonopyMeshCalculation(PhonopyCalculation):
+    """ Class to load PhonoPy mesh calculations
+    
+    Can calculate the phonon density of states from the PhonoPy data
+    Has the same attributes as PhonopyCalculation
+    """
+
     def __init__(self, yaml_filename):
+        """ PhonopyMeshCalculation(yaml_filename, born_filename)
+
+        Arguments
+        ---------
+        yaml_filename: string
+            .yaml file exported by PhonoPy
+        born_filename: string
+            BORN file that contains the Born effective charge tensors
+            and dielectric tensors.
+            Important: this function expects a BORN file with a line
+            for each atom, since no symmetry is implemented. PhonoPy
+            exports a BORN file with less lines based on symmetry,
+            which is not compatible with this code.
+
+        Returns
+        -------
+        self: PhonopyCalculation
+        """
         super().__init__(yaml_filename)
         
     def calculate_DOS(self, unit="THz", sigma=None, sigma_factor=0.01, omega=None, num_omegas=501):
         # Calculate the phonon DOS with the smearing method
-        # Has been verified against PhonoPy's smearing method (LiF, 10x10x10, SIGMA=0.4THz)
         phonon_freqs = self.get_frequencies(unit)
         omega_max = np.max(phonon_freqs)
         omega_min = np.min(phonon_freqs)
