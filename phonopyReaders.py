@@ -791,7 +791,7 @@ class PhonopyCalculation:
             Size: one more than number of segments in the path
             List of labels of special points, to plot on the x-axis
             on a plot of phonon bands
-        jump_indices: list of int
+        jump_indices: np.array of int
             Indices where the path shows a discontinuous jump
 
         """
@@ -2057,18 +2057,51 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             # Otherwise, return an array of dynamical matrices
             return omegas, eigvecs
         
-    def get_label_permutations(self, qs, eigenvectors=None, jump_indices=np.array([]), max_value_cutoff=0.8):
-        # For a given succession on q-points (preferably on a path), gives the permutations of the labels so that the
-        # band structure plots of the frequencies has the correct crossings. This is calculated from the overlap of
-        # the corresponding phonon eigenvectors.
+    def get_label_permutations(self, qs, eigenvectors=None, 
+                               jump_indices=np.array([])):
+        """ Phonon label permutations for correct crossings in plots
+
+        For a given succession on q-points along a path, 
+        gives the permutations of the labels so that the band structure
+        plots of the frequencies has the correct crossings. This is
+        calculated from the overlap of the corresponding phonon
+        eigenvectors.
+
+        Arguments
+        ---------
+        qs: np.array of real
+            shape(:, 3)
+            q-points along a path, used to make a phonon band plot
+        eigenvectors: np.array of complex
+            shape (len(qs), numbands, numbands)
+            Default: recalculate eigenvecs for qs from scratch
+        jump_indices: list of int
+            Indices where the path shows a discontinuous jump,
+            as output by self.parse_path
+
+        Returns
+        -------
+        band_label_permutations: np.array of int (only 0 or 1)
+            shape (len(qs), numbands, numbands)
+            Stack of permutation matrices
+            For each q-point, omega @ band_label_permutation
+            gives the correctly permuted phonon frequencies
+        
+        """
         if eigenvectors is None:
-            omegas, eigenvectors = self.get_freqs_eigvecs_interpolated(qs, convention="c-type", include_nac="Gonze")
-        band_label_permutations = np.tile(np.identity(self.numbands, dtype=int), (len(eigenvectors),1,1))
+            _, eigenvectors = \
+                self.get_freqs_eigvecs_interpolated(qs, convention="c-type", 
+                                                    include_nac="Gonze")
+        band_label_permutations = np.tile(np.identity(self.numbands, dtype=int),
+                                          (len(eigenvectors),1,1))
         for index in range(len(eigenvectors)-1):
             # Exclude overlaps with the gamma point, and with jumps in the path
-            if (not any(np.linalg.norm(qs[index:(index+2)], axis=1) < 1e-5) and not index in jump_indices):
-                overlap_matrix = np.abs(eigenvectors[index] @ eigenvectors[index+1].conj().T)**2
-                permutation_matrix = np.zeros((self.numbands, self.numbands), dtype=int)
+            if (not any(np.linalg.norm(qs[index:(index+2)], axis=1) < 1e-5) 
+                and not index in jump_indices):
+                overlap_matrix = np.abs(eigenvectors[index] @ \
+                                        eigenvectors[index+1].conj().T)**2
+                permutation_matrix = np.zeros((self.numbands, self.numbands), 
+                                              dtype=int)
                 while (overlap_matrix > -0.5).any():
                     max_value = np.max(overlap_matrix)
                     max_indices = np.where(overlap_matrix==max_value)
@@ -2077,19 +2110,40 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
                     overlap_matrix[:,max_indices[1]] = -1                    
                 permutation_matrix = permutation_matrix.T
                 current_permutation = band_label_permutations[index]
-                band_label_permutations[index+1:] = permutation_matrix @ current_permutation
+                band_label_permutations[index+1:] = \
+                    permutation_matrix @ current_permutation
         return band_label_permutations
 
     
     def get_LATO_weights(self, qs, eigenvectors=None):
-        # For a given succession on q-points, gives the TA, LA, TO, and LO "weights" of the phonon bands at those
-        # q-points, based on their eigenvectors. The weights are positive and add up to one.
-        # It is recommended to use eigenvectors in the c-type convention for the calculation of these weights.
+        """ Calculate TA, LA, TO, and LO "weights" of phonon bands
+
+        The LATO weights are calculated with the eigenvectors in the
+        c-type convention. They are positive and add up to one.
+
+        Arguments
+        ---------
+        qs: np.array of real
+            shape(:, 3)
+            q-points at which to calculate the LATO weights
+        eigenvectors: np.array of complex
+            shape (len(qs), numbands, numbands)
+            Default: recalculate eigenvecs for qs from scratch
+
+        Returns
+        -------
+        weight_matrices: np.array of real
+            shape(len(qs), 4, numbands)
+            LATO weights for each of the bands
+            Second index represents TA, LA, TO, LO in order
+        """
         
         if eigenvectors is None:
-            omegas, eigenvectors = self.get_freqs_eigvecs_interpolated(qs, convention="c-type", include_nac="Gonze")
+            _, eigenvectors = \
+                self.get_freqs_eigvecs_interpolated(qs, convention="c-type", 
+                                                    include_nac="Gonze")
         zero_indices = np.nonzero(np.linalg.norm(qs, ord=2, axis=1) < 1e-10)[0]
-        qs[zero_indices] = 1e-12*np.array([1.0, 1.0, 1.0])  # Avoid dividing by zero at Gamma
+        qs[zero_indices] = 1e-12*np.array([1.0, 1.0, 1.0])  # Gamma point
         
         ms = self.get_atom_masses()
         PA = np.sqrt(ms[:,None]*ms)/np.sum(ms)
@@ -2098,42 +2152,121 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         outer_product = lambda A: A[...,:,None]*A[...,None,:]
         PL = outer_product(q_cart/np.linalg.norm(q_cart, ord=2, axis=-1)[:,None])
         PT = np.eye(self.num_dimensions) - PL
-        projection_tensor = np.array([np.kron(PA, PT), np.kron(PA, PL), np.kron(PO, PT), np.kron(PO, PL)])
-        weight_matrices = (eigenvectors.conj() @ projection_tensor @ eigenvectors.swapaxes(-1,-2))\
-            .diagonal(axis1=-1,axis2=-2).swapaxes(0,1)
-        weight_matrices.setflags(write=True)  # Somehow this array is read-only so we have to make it writeable
+        projection_tensor = np.array([np.kron(PA, PT), np.kron(PA, PL), 
+                                      np.kron(PO, PT), np.kron(PO, PL)])
+        LATO_weights = np.real((eigenvectors.conj() @ projection_tensor @ \
+                                eigenvectors.swapaxes(-1,-2))\
+                                .diagonal(axis1=-1,axis2=-2).swapaxes(0,1))
+        # Somehow this array is read-only so we have to make it writeable
+        LATO_weights.setflags(write=True)
                 
-        # We know exactly what the weights should be at Gamma, so handle this case separately
+        # Separately calculate the weights at Gamma
         weights_gamma = np.zeros((4, self.numbands))
         weights_gamma[0, 0:(self.num_dimensions-1)] = 1
         weights_gamma[1, (self.num_dimensions-1):self.num_dimensions] = 1
-        weights_gamma[2, self.num_dimensions:(self.num_dimensions+(self.num_dimensions-1)*(self.natom-1))] = 1
-        weights_gamma[3, (self.num_dimensions+(self.num_dimensions-1)*(self.natom-1)):self.num_dimensions*self.natom] =1
-        weight_matrices[zero_indices] = weights_gamma
-                
-        return weight_matrices
+        weights_gamma[2, self.num_dimensions:\
+                      (self.num_dimensions+\
+                       (self.num_dimensions-1)*(self.natom-1))] = 1
+        weights_gamma[3, (self.num_dimensions+(self.num_dimensions-1)\
+                          *(self.natom-1)):self.num_dimensions*self.natom] =1
+        LATO_weights[zero_indices] = weights_gamma
+
+        return LATO_weights
     
-    def plot_bands(self, path, path_labels, npoints=51, include_nac="None", unit="THz", title="Phonon dispersion", 
-                   band_connections=False, band_label_permutations=None, highlight_degenerates=False,
-                   save_filename=None, text_sizes=(13, 15, 16), plot_range=None):
-        # Plot the interpolated band structure along the given path
-        # The input path and path_labels are in the same form as requires by Phonopy and phonopy.phonon.band_structure
+    def plot_bands(self, path, path_labels, npoints=51, include_nac="None", 
+                   unit="THz", title="Phonon dispersion", 
+                   band_connections=False, band_label_permutations=None, 
+                   highlight_degenerates=False, save_filename=None, 
+                   text_sizes=(13, 15, 16), plot_range=None):
+        """ Plot the phonon band structure in a figure
+
+        Arguments
+        ---------
+        path: list of list of list of real
+            High-symmetry path to be plotted on the Brillouin zone
+            Follows the conventions of PhonoPy and pathsLabels.py: 
+                - First level: list of connected path segments
+                - Second level: list of points that mark path segments
+                - Third level: direct coordinates of points
+            Default: no path
+        path_labels: list of str
+            List of names of the edge points to be plotted on the path
+            Default: no labels
+        npoints: int
+            Number of q-points on every path segment
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        unit: str
+            Phonon frequency unit, default "THz"
+        title: str
+            Title of the plot
+            Default: "Phonon dispersion"
+        band_connections: bool
+            Whether to calculate and plot the phonon band crossings
+            Default: False
+        band_label_permutations: np.array of int (only 0 or 1)
+            shape (:, numbands, numbands)
+            Label permutations output by self.get_label_permutations
+            Only used when band_connections == True
+            Default: None, recalculate from the eigenvectors
+        highlight_degenerates: bool
+            Whether to highlight the degenerate bands in red
+            Default: False
+        save_filename: str
+            Save the figure with the given filename, in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        plot_range: tuple of 2 reals
+            Minimum and maximum limits of the figure y-axis
+            Default: rounded range of num_omegas points between the
+            minimum and maximum phonon frequency
+        
+        Returns
+        -------
+        fig: figure handle
+        ax: axis handle
+        plot_handle: handle to the plot data
+
+        """
         if band_connections:
             plot_style = dict(linestyle="solid", linewidth=1.5)
-            plot_highlight_style = dict(color="black", linestyle="solid", linewidth=2.0)
+            plot_highlight_style = dict(color="black", linestyle="solid", 
+                                        linewidth=2.0)
         else:
             plot_style = dict(color="black", linestyle="solid", linewidth=1.5)
-            plot_highlight_style = dict(color="red", linestyle="solid", linewidth=2.0)
+            plot_highlight_style = dict(color="red", linestyle="solid", 
+                                        linewidth=2.0)
         
-        qs, distances, xaxis_labels, jump_indices = self.parse_path(path, path_labels, npoints=npoints)
+        qs, distances, xaxis_labels, jump_indices = \
+            self.parse_path(path, path_labels, npoints=npoints)
         
-        omegas, eigenvectors = self.get_freqs_eigvecs_interpolated(qs, unit=unit, include_nac=include_nac)
+        omegas, eigenvectors = \
+            self.get_freqs_eigvecs_interpolated(qs, unit=unit, 
+                                                include_nac=include_nac)
         if band_connections:
             if band_label_permutations is None:
-                band_label_permutations = self.get_label_permutations(qs, eigenvectors, jump_indices=jump_indices)
+                band_label_permutations = \
+                    self.get_label_permutations(qs, eigenvectors, 
+                                                jump_indices=jump_indices)
         else:
-            band_label_permutations = np.tile(np.identity(self.numbands, dtype=int), (len(omegas),1,1))
-        omegas_permuted = np.array([omegas[i] @ band_label_permutations[i] for i in range(len(omegas))])
+            band_label_permutations = \
+                np.tile(np.identity(self.numbands, dtype=int), 
+                        (len(omegas),1,1))
+        omegas_permuted = np.array([omegas[i] @ band_label_permutations[i] 
+                                    for i in range(len(omegas))])
 
         
         fig, ax = plt.subplots()
@@ -2143,14 +2276,17 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             # Plot the degenerate bands
             degenerates = np.full((len(omegas), self.numbands), False)
             max_omega = np.max(omegas)
-            degenerates[:,1:] = np.array([(omegas[:,i+1]-omegas[:,i])/max_omega < 2.0e-3 for i in range(self.numbands-1)]).T
+            degenerates[:,1:] = \
+                np.array([(omegas[:,i+1]-omegas[:,i])/max_omega < 2.0e-3 
+                          for i in range(self.numbands-1)]).T
             omegas_degenerate = np.ma.masked_array(omegas, ~degenerates)
             ax.plot(distances, omegas_degenerate, **plot_highlight_style)
         
         xaxis_ticks = np.append(distances[0::npoints], distances[-1])
         
         ax.set_title(title, size=text_sizes[2])
-        ax.set_ylabel('Phonon frequencies ('+str(unit)+')', fontsize=text_sizes[1])
+        ax.set_ylabel('Phonon frequencies ('+str(unit)+')', 
+                      fontsize=text_sizes[1])
         ax.set_xticks(xaxis_ticks, xaxis_labels)
         ax.tick_params(axis='both', labelsize=text_sizes[0])
         ax.set_xlim(np.min(distances),np.max(distances))
@@ -2158,7 +2294,8 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         if plot_range is None:
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+            if omega_min < -self.convert_units(0.1, from_unit="THz", 
+                                               to_unit=unit):
                 # Include the unstable phonon modes in the plot
                 omega_min_scale, omega_max_scale = \
                     round_plot_range(omega_min, omega_max)
@@ -2177,51 +2314,139 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         # Plot unstable region in case of imaginary phonon frequencies
         if omega_min_scale < 0:
             plt.axhline(y=0.0, color='black', linewidth=1.0, linestyle="dashed")
-            ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), distances[-1]-distances[0], -omega_min_scale,
-                                       fill=True, color=(0.8, 0.8, 0.8), zorder=-10))
+            ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), 
+                                       distances[-1]-distances[0], 
+                                       -omega_min_scale, fill=True, 
+                                       color=(0.8, 0.8, 0.8), zorder=-10))
 
-        
         fig.tight_layout()    
         fig.show()
         if save_filename is not None:
             plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
     
-    def plot_LATO_weights(self, path, path_labels, npoints=51, include_nac="None", unit="THz", title="LATO weights", 
-                          band_connections=False, band_label_permutations=None, highlight_degenerates=False, 
-                          save_filename=None, text_sizes=(13, 15, 16), plot_range=None, num_markers=None, subplots=True,
-                          marker_style=None):
+    def plot_LATO_weights(self, path, path_labels, npoints=51, 
+                          include_nac="None", unit="THz", 
+                          band_connections=False, band_label_permutations=None, 
+                          highlight_degenerates=False, save_filename=None, 
+                          text_sizes=(13, 15, 16), plot_range=None, 
+                          num_markers=None, subplots=True, marker_style=None):
+        """ Plot phonon band structure with LATO weights superimposed
+
+        Arguments
+        ---------
+        path: list of list of list of real
+            High-symmetry path to be plotted on the Brillouin zone
+            Follows the conventions of PhonoPy and pathsLabels.py: 
+                - First level: list of connected path segments
+                - Second level: list of points that mark path segments
+                - Third level: direct coordinates of points
+            Default: no path
+        path_labels: list of str
+            List of names of the edge points to be plotted on the path
+            Default: no labels
+        npoints: int
+            Number of q-points on every path segment
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        unit: str
+            Phonon frequency unit, default "THz"
+        band_connections: bool
+            Whether to calculate and plot the phonon band crossings
+            Default: False
+        band_label_permutations: np.array of int (only 0 or 1)
+            shape (:, numbands, numbands)
+            Label permutations output by self.get_label_permutations
+            Only used when band_connections == True
+            Default: None, recalculate from the eigenvectors
+        highlight_degenerates: bool
+            Whether to highlight the degenerate bands in red
+            Default: False
+        save_filename: str
+            Save the figure with the given filename, in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        plot_range: tuple of 2 reals
+            Minimum and maximum limits of the figure y-axis
+            Default: rounded range of num_omegas points between the
+            minimum and maximum phonon frequency
+        num_markers: int
+            Number of markers plot on the bands
+            Default: 10 markers per path segment
+        subplots: bool
+            Indicate whether to plot four subplots in one figure
+            or whether to have each weight in its own figure
+            Default: True, four subplots in one figure
+        marker_style: dict
+            Style parameters for the markers superimposed on the plot
+            Default: dict(marker='o', color='lightblue', 
+                edgecolors='black', linewidth=0.5, alpha=1.0)
+            
+        
+        Returns
+        -------
+        fig_handles: list of fig_handle
+            List of all the figure handles that were generated by
+            this function
+
+        """
         if band_connections:
             plot_style = dict(linestyle="solid", linewidth=1)
-            plot_highlight_style = dict(color="black", linestyle="solid", linewidth=1.5)
+            plot_highlight_style = dict(color="black", linestyle="solid", 
+                                        linewidth=1.5)
         else:
             plot_style = dict(color="black", linestyle="solid", linewidth=1)
-            plot_highlight_style = dict(color="red", linestyle="solid", linewidth=1.5)
+            plot_highlight_style = dict(color="red", linestyle="solid", 
+                                        linewidth=1.5)
         if num_markers is None:
-            num_markers = len(path)*10 + 1
+            num_markers = sum([len(segment) for segment in path])*10 + 1
         if marker_style is None:
-            marker_style = dict(marker='o', color='lightblue', edgecolors='black', linewidth=0.5, alpha=1.0)
+            marker_style = dict(marker='o', color='lightblue', 
+                                edgecolors='black', linewidth=0.5, alpha=1.0)
         
-        qs, distances, xaxis_labels, jump_indices = self.parse_path(path, path_labels, npoints=npoints)
-        omegas, eigenvectors = self.get_freqs_eigvecs_interpolated(qs, unit=unit, include_nac=include_nac)
+        qs, distances, xaxis_labels, jump_indices = \
+            self.parse_path(path, path_labels, npoints=npoints)
+        omegas, eigenvectors = \
+            self.get_freqs_eigvecs_interpolated(qs, unit=unit, 
+                                                include_nac=include_nac)
         if band_connections:
             if band_label_permutations is None:
-                band_label_permutations = self.get_label_permutations(qs, eigenvectors, jump_indices=jump_indices)
+                band_label_permutations = \
+                    self.get_label_permutations(qs, eigenvectors, 
+                                                jump_indices=jump_indices)
         else:
-            band_label_permutations = np.tile(np.identity(self.numbands, dtype=int), (len(omegas),1,1))
-        omegas_permuted = np.array([omegas[i] @ band_label_permutations[i] for i in range(len(omegas))])
-        # eigenvectors_permuted = np.array([band_label_permutations[i].T @ eigenvectors[i] for i in range(len(omegas))])
-        # distances_array = np.tile(distances[:,None], (1,self.numbands))
+            band_label_permutations = \
+                np.tile(np.identity(self.numbands, dtype=int), 
+                        (len(omegas),1,1))
+        omegas_permuted = np.array([omegas[i] @ band_label_permutations[i]
+                                    for i in range(len(omegas))])
         
-        distances_markers = np.linspace(np.min(distances), np.max(distances), num_markers)
+        distances_markers = np.linspace(np.min(distances), np.max(distances), 
+                                        num_markers)
         distances_array = np.tile(distances_markers, (self.numbands,1)).T
-        qs_markers = scipy.interpolate.griddata(distances, qs, distances_markers)
-        # perms_markers = scipy.interpolate.griddata(distances, band_label_permutations, distances_markers, 
-        #                                            method='nearest')
+        qs_markers = scipy.interpolate.griddata(distances, qs, 
+                                                distances_markers)
         
-        omegas_markers, eigvecs_markers = self.get_freqs_eigvecs_interpolated(qs_markers, unit=unit, 
-                                               convention="c-type", include_nac=include_nac, clean_value=1e-3)
-        weight_matrices = self.get_LATO_weights(qs_markers, eigenvectors=eigvecs_markers)
+        omegas_markers, eigvecs_markers = \
+            self.get_freqs_eigvecs_interpolated(qs_markers, unit=unit, 
+                                                convention="c-type", 
+                                                include_nac=include_nac, 
+                                                clean_value=1e-3)
+        weight_matrices = self.get_LATO_weights(qs_markers, 
+                                                eigenvectors=eigvecs_markers)
         
         classes = ["TA", "LA", "TO", "LO"]
         marker_max_radius = 10
@@ -2240,17 +2465,25 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             ax_handles = axs.flat
         plot_handles = []
         for index, ax in enumerate(ax_handles):
-            marker_sizes = np.real(marker_max_radius**2*weight_matrices[:,index,:])            
-            plot_handles_this = ax.plot(distances, omegas_permuted, **plot_style, zorder=5)
+            marker_sizes = np.real(marker_max_radius**2*\
+                                   weight_matrices[:,index,:])            
+            plot_handles_this = ax.plot(distances, omegas_permuted, 
+                                        **plot_style, zorder=5)
             if highlight_degenerates:
                 # Plot the degenerate bands
                 degenerates = np.full((len(omegas), self.numbands), False)
                 max_omega = np.max(omegas)
-                degenerates[:,1:] = np.array([(omegas[:,i+1]-omegas[:,i])/max_omega < 2.0e-3 for i in range(self.numbands-1)]).T
-                omegas_degenerate = np.ma.masked_array(omegas_permuted, ~degenerates)
-                ax.plot(distances, omegas_degenerate, **plot_highlight_style, zorder=6)
+                degenerates[:,1:] = \
+                    np.array([(omegas[:,i+1]-omegas[:,i])/max_omega < 2.0e-3 
+                              for i in range(self.numbands-1)]).T
+                omegas_degenerate = np.ma.masked_array(omegas_permuted, 
+                                                       ~degenerates)
+                ax.plot(distances, omegas_degenerate, 
+                        **plot_highlight_style, zorder=6)
             
-            plot_handle_markers = ax.scatter(distances_array, omegas_markers, s=marker_sizes, **marker_style, zorder=0)
+            plot_handle_markers = ax.scatter(distances_array, omegas_markers, 
+                                             s=marker_sizes, **marker_style, 
+                                             zorder=0)
             plot_handles_this.append(plot_handle_markers)
             
             xaxis_ticks = np.append(distances[0::npoints], distances[-1])
@@ -2264,7 +2497,8 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             if plot_range is None:
                 omega_min = np.min(omegas)
                 omega_max = np.max(omegas)
-                if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+                if omega_min < -self.convert_units(0.1, from_unit="THz", 
+                                                   to_unit=unit):
                     # Include the unstable phonon modes in the plot
                     omega_min_scale, omega_max_scale = \
                         round_plot_range(omega_min, omega_max)
@@ -2282,14 +2516,18 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             
             # Plot unstable region in case of imaginary phonon frequencies
             if omega_min_scale < 0:
-                ax.axhline(y=0.0, color='black', linewidth=1.0, linestyle="dashed")
-                ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), distances[-1]-distances[0], -omega_min_scale,
-                                           fill=True, color=(0.8, 0.8, 0.8), zorder=-10))
+                ax.axhline(y=0.0, color='black', linewidth=1.0, 
+                           linestyle="dashed")
+                ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), 
+                                           distances[-1]-distances[0], 
+                                           -omega_min_scale, fill=True, 
+                                           color=(0.8, 0.8, 0.8), zorder=-10))
                 
             plot_handles.append(plot_handles_this)
             if save_filename is not None and subplots is False:
                 fig_handles[index].tight_layout()
-                fig_handles[index].savefig(save_filename+"_"+classes[index]+".pdf")
+                fig_handles[index].savefig(save_filename+"_"+\
+                                           classes[index]+".pdf")
         for fig in fig_handles:
             fig.tight_layout()
             fig.show()
@@ -2617,7 +2855,7 @@ class YCalculation():
         if figsize is None and subplots is not None:
             figsize = (6.4*subplots[1], 4.8*subplots[0])
         if num_markers is None:
-            num_markers = len(path)*10 + 1
+            num_markers = sum([len(segment) for segment in path])*10 + 1
         marker_max_radius = marker_style['max_radius']
         del marker_style['max_radius']
         number_of_bands = self.zerocalc.numbands
