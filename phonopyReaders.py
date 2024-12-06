@@ -2536,40 +2536,130 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         return fig_handles
 
 class YCalculation():
-    # Represents a collection of calculations at specified electric fields
-    # Currently only implemented for Efields of the form [-E, 0, +E]
-    # Set take_imag=True for materials with an inversion center that satisfies R(k)=k, like LiF
-    def __init__(self, yaml_filenames, Efields, born_filename=None, Efield_unit='V/Ang', take_imag=False,
-                 nac_q_direction=np.array([1.0,0.0,0.0]), nac_G_cutoff=None, nac_lambda=None):
+    """ Collection of calculations at specified electric fields
+
+    This class has a list of PhonopyCommensurateCalculations as
+    attributes, where each of these calculations is supposed to be
+    calculated at different external electric fields.
+    These calculations are used to calculate the electric field
+    derivative of the dynamical matrix, and its derived quantities
+    such as Y_{nu1,nu2}(q) and T(omega).
+    The code assumes that one of the calculations is performed
+    at zero electric field, and that all calculations are performed
+    on the same grid of commensurate q-points.
+    
+    Attributes
+    ----------
+    calcs: list of PhonopyCommensurateCalculation
+    Efields: np.array of real
+        shape (len(calcs),)
+    num_calcs: int
+        Equal to len(calcs)
+    zerocalc: PhonopyCommensurateCalculation
+        The calculation that is performed at E=0
+    dynmats_derE: np.array of complex
+        shape (:, numbands, numbands)
+    take_imag: bool
+
+    """
+    def __init__(self, yaml_filenames, Efields, born_filename=None, 
+                 Efield_unit='V/Ang', take_imag=False, 
+                 nac_q_direction=np.array([1.0,0.0,0.0]), nac_G_cutoff=None, 
+                 nac_lambda=None):
+        """ YCalculation(yaml_filenames, Efields, ...)
+
+        Arguments
+        ---------
+        yaml_filenames: list of str
+            List of the .yaml files that contain the PhonoPy
+            calculation data to load in
+        Efields: list of real
+            List of electric fields that the PhonoPy calculations
+            were performed at
+        born_filename: str
+            BORN file that contains the Born effective charge tensors
+            and dielectric tensors.
+            Important: this function expects a BORN file with a line
+            for each atom, since no symmetry is implemented. PhonoPy
+            exports a BORN file with less lines based on symmetry,
+            which is not compatible with this code.
+        Efield_unit: str
+            Units in which the electric field are given
+            Default: "V/Ang", default units in VASP
+        take_image: bool
+            Whether to take the imaginary part of the dynamical matrix
+            derivative. More accurate results for materials with an 
+            inversion center that satisfies R(k)=k, but wrong results
+            for other materials
+            Default: False
+        nac_q_direction: np.array of real
+            In case the dynamical matrix is not analytic at Gamma,
+            store the values with limiting direction nac_q_direction
+            Default: np.array([1.0, 0.0, 0.0])
+        nac_G_cutoff: real
+            Cutoff radius for reciprocal lattice sums
+            Default: Same as PhonoPy, chosen to include approximately 
+            300 reciprocal lattice points
+        nac_lambda: real
+            Exponential decay for reciprocal lattice sums
+            Default: Same as PhonoPy, based on self.dielectric_tensor
+            and self.nac_G_cutoff
+
+        
+        Returns
+        -------
+        self: YCalculation
+
+        Raises
+        ------
+        ValueError
+            when the given number of Efields does not match the
+            number of given calculations
+
+        """
         self.num_calcs = len(yaml_filenames)
         if len(Efields) != self.num_calcs:
-            raise ValueError("The given number of Efields does not match the number of given calculations")
-        self.Efields = self.convert_Efield_units(np.array(Efields), from_unit=Efield_unit, to_unit='V/Ang')
-        self.calcs = [PhonopyCommensurateCalculation(filename, born_filename, nac_q_direction, nac_G_cutoff, nac_lambda)
+            raise ValueError("""The given number of Efields does not
+                              match the number of given calculations""")
+        self.Efields = \
+            self.convert_Efield_units(np.array(Efields), 
+                                      from_unit=Efield_unit, to_unit='V/Ang')
+        self.calcs = [PhonopyCommensurateCalculation(filename, born_filename, 
+                                                     nac_q_direction, 
+                                                     nac_G_cutoff, nac_lambda)
                       for filename in yaml_filenames]
         for calc in self.calcs:
-            # We will take square roots and inverses of the frequencies, so they have to be larger than zero
+            # We will take square roots and inverses of the frequencies, 
+            # so they have to be larger than zero
             calc.clean_frequencies()
-        self.zerocalc = self.calcs[np.argmin(np.abs(self.Efields))]  # Represents the calculation done at E=0
+        self.zerocalc = self.calcs[np.argmin(np.abs(self.Efields))]
         self.set_take_imag(take_imag)
-        self.dynmats_derE = self.get_dynmats_derE(freq_unit='THz', convention="c-type", Efield_unit='V/Ang', 
-                                                  take_imag=self.take_imag)
+        self.dynmats_derE = \
+            self.get_dynmats_derE(freq_unit='THz', convention="c-type", 
+                                  Efield_unit='V/Ang', take_imag=self.take_imag)
+        return self
         
     def set_take_imag(self, take_imag):
+        """ Set take_imag to a certain value """
         if take_imag is not None:
             self.take_imag = take_imag
         
     def get_num_calcs(self):
+        """ Get the number of calculations """
         return self.num_calcs
     
     def get_zerocalc(self):
+        """ Get the calculation at zero electric field """
         return self.zerocalc
         
     def get_calcs(self):
+        """ Get a list of all calculations """
         return self.calcs
     
     def get_Efields(self, unit='V/Ang'):
-        return self.convert_Efield_units(self.Efields, from_unit='V/Ang', to_unit=unit)
+        """ Get a list of the electric fields in the desired unit """
+        return self.convert_Efield_units(self.Efields, from_unit='V/Ang', 
+                                         to_unit=unit)
     
     def convert_Efield_units(self, Efields, from_unit='V/Ang', to_unit='V/Ang'):
         # Given an array of electric fields in units from_unit, converts them the unit given in to_unit
