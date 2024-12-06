@@ -2514,16 +2514,16 @@ class YCalculation():
         label_names = ["LATO", "LT", "AO"]
         if colors is None:
             colors = [
-                (0.4, 0.1, 0.1),
-                (0.4, 0.4, 1.0),
-                (0.2, 0.2, 0.2),
-                (0.8, 0.3, 0.8),
-                (0.1, 0.3, 0.1),
-                (0.7, 0.7, 0.2),
-                (0.1, 0.3, 0.4),
-                (0.9, 0.3, 0.3),
-                (0.1, 0.1, 0.4),
-                (0.2, 0.7, 0.2)
+                (0.7, 0.4, 0.4),
+                (0.7, 0.7, 1.0),
+                (0.5, 0.5, 0.5),
+                (0.9, 0.6, 0.9),
+                (0.4, 0.6, 0.4),
+                (0.9, 0.9, 0.5),
+                (0.4, 0.6, 0.7),
+                (1.0, 0.6, 0.6),
+                (0.4, 0.4, 0.7),
+                (0.5, 1.0, 0.5)
             ]
         for labels, name,  partials, Tomega_res in zip(labels_list, label_names, partials_list[:-1], Tomega_resolutions):
             num_partials = len(partials)
