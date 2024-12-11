@@ -186,14 +186,9 @@ class PhonopyCalculation:
             for each atom, since no symmetry is implemented. PhonoPy
             exports a BORN file with less lines based on symmetry,
             which is not compatible with this code.
-
-        Returns
-        -------
-        self: PhonopyCalculation
         """
         self.load_yaml(yaml_filename)
-        self.load_BORN(born_filename)            
-        return self
+        self.load_BORN(born_filename)
                     
     def load_yaml(self, yaml_filename):
         """ Load data from PhonoPy .yaml file
@@ -1178,10 +1173,6 @@ class PhonopyMeshCalculation(PhonopyCalculation):
             for each atom, since no symmetry is implemented. PhonoPy
             exports a BORN file with less lines based on symmetry,
             which is not compatible with this code.
-
-        Returns
-        -------
-        self: PhonopyMeshCalculation
         """
         super().__init__(yaml_filename)
         
@@ -1264,10 +1255,6 @@ class PhonopyBandCalculation(PhonopyCalculation):
             for each atom, since no symmetry is implemented. PhonoPy
             exports a BORN file with less lines based on symmetry,
             which is not compatible with this code.
-
-        Returns
-        -------
-        self: PhonopyBandCalculation
         """
         super().__init__(yaml_filename)
         
@@ -1469,10 +1456,6 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             Default: Same as PhonoPy, based on self.dielectric_tensor
             and self.nac_G_cutoff
 
-
-        Returns
-        -------
-        self: PhonopyCommensurateCalculation
         """
         super().__init__(yaml_filename, born_filename)
         self.optimal_sc_vectors = self.get_optimal_sc_vectors()
@@ -2605,11 +2588,6 @@ class YCalculation():
             Default: Same as PhonoPy, based on self.dielectric_tensor
             and self.nac_G_cutoff
 
-        
-        Returns
-        -------
-        self: YCalculation
-
         Raises
         ------
         ValueError
@@ -2637,7 +2615,6 @@ class YCalculation():
         self.dynmats_derE = \
             self.get_dynmats_derE(freq_unit='THz', convention="c-type", 
                                   Efield_unit='V/Ang', take_imag=self.take_imag)
-        return self
         
     def set_take_imag(self, take_imag):
         """ Set take_imag to a certain value """

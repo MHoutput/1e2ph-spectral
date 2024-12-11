@@ -18,6 +18,7 @@ mpl.rcParams['font.family'] = 'serif'
 mpl.rcParams['font.serif'] = ['Computer Modern']
 mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble']="\\usepackage{bm}"
+mpl.rcParams['hatch.linewidth']=4.0
 np.set_printoptions(precision=6, suppress=True)
 
 #%% Input parameters
@@ -29,19 +30,34 @@ recalc_qmesh = 128  # Set to 16 for fast inaccurate calculation
 recalc_sigma = 0.1  # Smearing width, set to 0.8 when setting recalc_qmesh=16
 recalc_parallel_jobs = 4
 
-colors = [
-    (0.7, 0.4, 0.4),
-    (0.7, 0.7, 1.0),
-    (0.5, 0.5, 0.5),
-    (0.9, 0.6, 0.9),
-    (0.4, 0.6, 0.4),
-    (0.9, 0.9, 0.5),
-    (0.4, 0.6, 0.7),
-    (1.0, 0.6, 0.6),
-    (0.4, 0.4, 0.7),
-    (0.5, 1.0, 0.5)
+# hatchplot_styles = [
+#     dict(color1=(0.7, 0.4, 0.4), color2=(0.7, 0.4, 0.4), hatch='//'),
+#     dict(color1=(0.7, 0.7, 1.0), color2=(0.7, 0.7, 1.0), hatch='\\\\'),
+#     dict(color1=(0.5, 0.5, 0.5), color2=(0.5, 0.5, 0.5), hatch='//'),
+#     dict(color1=(0.9, 0.6, 0.9), color2=(0.9, 0.6, 0.9), hatch='\\\\'),
+#     dict(color1=(0.4, 0.6, 0.4), color2=(0.4, 0.6, 0.4), hatch='//'),
+#     dict(color1=(0.9, 0.9, 0.5), color2=(0.9, 0.9, 0.5), hatch='\\\\'),
+#     dict(color1=(0.4, 0.6, 0.7), color2=(0.4, 0.6, 0.7), hatch='//'),
+#     dict(color1=(1.0, 0.6, 0.6), color2=(1.0, 0.6, 0.6), hatch='\\\\'),
+#     dict(color1=(0.4, 0.4, 0.7), color2=(0.4, 0.4, 0.7), hatch='//'),
+#     dict(color1=(0.5, 1.0, 0.5), color2=(0.5, 1.0, 0.5), hatch='\\\\'),
+# ]
+colorTA = (0.8, 0.5, 0.5)
+colorLA = (0.4, 0.7, 0.4)
+colorTO = (0.4, 0.4, 0.8)
+colorLO = (0.3, 0.3, 0.3)
+hatchplot_styles = [
+    dict(color1=colorTA, color2=colorTA, hatch='//'),
+    dict(color1=colorTA, color2=colorLA, hatch='//'),
+    dict(color1=colorTA, color2=colorTO, hatch='\\\\'),
+    dict(color1=colorTA, color2=colorLO, hatch='//'),
+    dict(color1=colorLA, color2=colorLA, hatch='//'),
+    dict(color1=colorLA, color2=colorTO, hatch='//'),
+    dict(color1=colorLA, color2=colorLO, hatch='\\\\'),
+    dict(color1=colorTO, color2=colorTO, hatch='//'),
+    dict(color1=colorTO, color2=colorLO, hatch='//'),
+    dict(color1=colorLO, color2=colorLO, hatch='//'),
 ]
-
 
 def read_filename(name):
     dirname, tail = os.path.split(name)
@@ -295,14 +311,25 @@ else:
             count += 1
 
     fig, ax = plt.subplots()
-    plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
-                                colors=colors)
+    total_stack = np.zeros_like(omega)
+    plot_handles = []
+    for index, (data, style, label) \
+        in enumerate(zip(T_contributions, hatchplot_styles, contribution_labels)):
+        plot_handle = \
+            ax.fill_between(omega, total_stack + data, y2=total_stack, 
+                            zorder=-index, linewidth=0, label=label,
+                            hatch=style['hatch'], fc=style['color1'], 
+                            edgecolor=style['color2'])
+        ax.plot(omega, total_stack + data, zorder=0, color='k', linewidth=0.5)
+        plot_handles.append(plot_handle)
+        total_stack += data
     plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
     plot_handles.append(plot_handle_total)
 
     ax.set_title("LiF", fontsize=text_sizes[2])
     ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
     ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,-3))
     ax.legend(handles=plot_handles[::-1], fontsize=13)
     ax.set_xlim(0, 40)
     ax.set_ylim(0, 0.00025)
@@ -473,14 +500,25 @@ else:
             count += 1
 
     fig, ax = plt.subplots()
-    plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
-                                colors=colors)
+    total_stack = np.zeros_like(omega)
+    plot_handles = []
+    for index, (data, style, label) \
+        in enumerate(zip(T_contributions, hatchplot_styles, contribution_labels)):
+        plot_handle = \
+            ax.fill_between(omega, total_stack + data, y2=total_stack, 
+                            zorder=-index, linewidth=0, label=label,
+                            hatch=style['hatch'], fc=style['color1'], 
+                            edgecolor=style['color2'])
+        ax.plot(omega, total_stack + data, zorder=0, color='k', linewidth=0.5)
+        plot_handles.append(plot_handle)
+        total_stack += data
     plot_handle_total, = ax.plot(omega, T_omega, color="black", label="Total")
     plot_handles.append(plot_handle_total)
 
     ax.set_title("KTaO$_3$", fontsize=text_sizes[2])
     ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
     ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,-3))
     ax.legend(handles=plot_handles[::-1], fontsize=13, ncol=2)
     ax.set_xlim(0, 50)
     ax.set_ylim(0, 0.006)
