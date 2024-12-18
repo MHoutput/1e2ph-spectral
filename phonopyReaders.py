@@ -2005,6 +2005,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
 
         eigvecs: np.array of complex
             shape (:, numbands, numbands)
+            Phonon eigenvectors evaluated at input q
         
         
         """
@@ -2639,161 +2640,326 @@ class YCalculation():
                                          to_unit=unit)
     
     def convert_Efield_units(self, Efields, from_unit='V/Ang', to_unit='V/Ang'):
-        # Given an array of electric fields in units from_unit, converts them the unit given in to_unit
-        # First, we write the frequencies in V/ang, which is our default unit:
+        """ Convert between different units for the electric field
+
+        The supported units are:
+            - "V/Ang": Volts per angstroms, also sometimes written as
+                       the force eV/Ang
+            - "V/m": Volts per meter, SI base unit equivalent to N/C
+            - "esu": statV/cm, as in Gaussian or ESU units
+
+        Arguments
+        ---------
+        Efields: real or np.array of real
+            Electric field given in from_unit 
+        from_unit: str
+            Unit that Efields is written in
+        to_unit: str
+            Desired output unit
+
+        Returns
+        -------
+        Efields in units given by to_unit
+        """
+
         match from_unit:
-            case "V/Ang":  # Volt per angstroms, also sometimes written as the force eV/Ang
+            case "V/Ang":
                 Efield_in_Vang = Efields
-            case "V/m":  # Volt per meter, this is the SI base unit, equivalent to N/C
+            case "V/m":
                 Efield_in_Vang = Efields*1e-10
-            case "esu":  # Gaussian or ESU units, the electric field is expressed in statV/cm
+            case "esu":
                 Efield_in_Vang = Efields*1e-16*299792458
             case _:
-                warn_string = str(from_unit)+""" is not a recognized electric field unit.
+                warn_string = str(from_unit)+\
+                """ is not a recognized electric field unit.
                 Currently only 'V/ang', 'V/m', and 'esu' are supported.
                 It is assumed that the input electric fields were in V/Ang."""
                 warnings.warn(warn_string)
                 Efield_in_Vang = Efields
-        # Now, we return the frequencies in the desired unit:
         match to_unit:
-            case "V/Ang":  # Volt per angstroms, also sometimes written as the force eV/Ang
+            case "V/Ang":
                 return Efield_in_Vang
-            case "V/m":  # Volt per meter, this is the SI base unit, equivalent to N/C
+            case "V/m":
                 return Efield_in_Vang*1e10
-            case "esu":  # Gaussian or ESU units, the electric field is expressed in statV/cm
+            case "esu":
                 return Efield_in_Vang*1e16/299792458
             case _:
-                warn_string = str(to_unit)+""" is not a recognized phonon frequency unit.
+                warn_string = str(to_unit)+\
+                """ is not a recognized phonon frequency unit.
                 Currently only 'V/ang', 'V/m' and 'esu' are supported.
                 Electric fields in V/Ang were returned instead."""
                 warnings.warn(warn_string)
                 return Efield_in_Vang
     
-    def get_dynmats_derE(self, freq_unit='THz', convention="c-type", Efield_unit='V/Ang', take_imag=None):
+    def get_dynmats_derE(self, freq_unit='THz', Efield_unit='V/Ang', 
+                         convention="c-type", take_imag=None):
+        """ Get dynamical matrix derivative from finite differences
+
+        Uses an n-th order finite difference approximation to calculate
+        the derivative of the dynamical matrix with respect to an
+        electric field.
+        The dynamical matrix data is automatically obtained from
+        the calculations contained in self.calcs, and the electric
+        fields are obtained from self.get_Efields
+
+        If take_imag is False, at least two electric field calculations
+        are necessary to approximatethe derivative.
+
+        Arguments
+        ---------
+        freq_unit: str
+            Phonon frequency unit, default "THz"
+        Efield_unit: str
+            Electric field unit, default "V/Ang"
+        convention: str
+            Convention for the dynamical matrix, default "c-type"
+        take_imag: bool
+            Whether to take the imaginary part of the result. Also sets
+            self.take_imag to the given value. Only correct when the
+            material has an inversion center that satisfies R(k)=k. 
+            Default: self.take_imag
+
+        Returns
+        -------
+        dynmat_der: np.array of complex
+            shape (numqpoints, numbands, numbands)
+            Derivative of the dynamical matrix with respect to an
+            external electric field
+
+        Raises
+        ------
+        ValueError
+            when take_imag is False and only one electric field 
+            calculation is available
+
+        """
         self.set_take_imag(take_imag)
         Efields = self.get_Efields(unit=Efield_unit)
         if len(Efields) == 1:
-            # Calculating the electric field derivative is only possible by taking the imaginary part
+            # Calculating the electric field derivative is only possible 
+            # by taking the imaginary part
             if self.take_imag:
                 weights = np.ones(1) / Efields[0]
             else:
-                raise ValueError("Calculating the derivative with take_imag=False requires at least two electric fields.")
+                raise ValueError(
+                    """Calculating the derivative with take_imag=False
+                    requires at least two electric fields."""
+                    )
         else:
-            # Calculate the electric field derivatives with a finite difference approximation
-            # Make a Vandermonde matrix of the electric fields, and solve it to get the finite difference coefficients:
+            # Make a Vandermonde matrix of the electric fields, 
+            # and solve it to get the finite difference coefficients:
             Efield_scale = np.max(np.abs(Efields))
             xs = Efields / Efield_scale
             system_matrix = np.vander(xs, increasing=True).T
             ordinates = np.zeros(len(xs))
             ordinates[1] = 1
             weights = np.linalg.solve(system_matrix, ordinates) / Efield_scale
-        dynmats_at_Es = np.array([calc.get_dynamical_matrices(unit=freq_unit, convention=convention) for calc in self.calcs])
+        dynmats_at_Es = \
+            np.array([calc.get_dynamical_matrices(unit=freq_unit, 
+                                                  convention=convention) 
+                      for calc in self.calcs])
         if self.take_imag:
-            # More stable for materials with an inversion center that satisfies R(k) = k, like LiF
             return 1j*np.imag(np.moveaxis(dynmats_at_Es, 0, -1) @ weights)
         else:
             return np.moveaxis(dynmats_at_Es, 0, -1) @ weights
         
-    def dynmats_derE_interpolate(self, q, freq_unit='THz', convention="c-type", Efield_unit='V/Ang'):
-        return self.zerocalc.fourier_interpolate(q, quantity=self.get_dynmats_derE(freq_unit=freq_unit, 
-                                                                                   convention=convention, 
-                                                                                   Efield_unit=Efield_unit), 
-                                                 unit=freq_unit, convention=convention, include_nac="None")
+    def dynmats_derE_interpolate(self, q, freq_unit='THz', Efield_unit='V/Ang', 
+                                 convention="c-type"):
+        """ Interpolate the dynamical matrix derivative to any q-point
+
+        Arguments
+        ---------
+        q: np.array of real
+            shape (:, 3)
+            Array of q-points at which the dynamical matrix derivative
+            is to be calculated
+        freq_unit: str
+            Phonon frequency unit, default "THz"
+        Efield_unit: str
+            Electric field unit, default "V/Ang"
+        convention: str
+            Convention for the dynamical matrix, default "c-type"
+
+        Returns
+        -------
+        dynmat_der: np.array of complex
+            shape (len(q), numbands, numbands)
+            Interpolated derivative of the dynamical matrix
+            with respect to an external electric field
+
+        """
+        quantity = self.get_dynmats_derE(freq_unit=freq_unit, 
+                                         convention=convention, 
+                                         Efield_unit=Efield_unit)
+        return self.zerocalc.fourier_interpolate(q, quantity=quantity, 
+                                                 unit=freq_unit, 
+                                                 convention=convention, 
+                                                 include_nac="None")
         
         
     def Y_interpolate(self, q, include_nac="None", freqs=None, eigvecs=None):
-        # Y is returned in Angstroms, or 1e-10 m
-        # include_nac only refers to the harmonic phonon quantities, there is no implementation yet for the
-        #   1-electron-2-phonon nac contribution
+        """ Calculate Y_{\nu_1,\nu_2}(q) at arbitrary q-points
+
+        Note that include_nac only refers to the harmonic phonon
+        quantities, there is no implementation yet for the
+        1-electron-2-phonon NAC contribution
+
+        Arguments
+        ---------
+        q: np.array of real
+            shape (:, 3)
+            Array of q-points at which the dynamical matrix derivative
+            is to be calculated
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+        freqs: np.array of real
+            shape (:, numbands)
+            Phonon frequencies evaluated at input q
+            Default: recalculated from self.zerocalc
+
+        eigvecs: np.array of complex
+            shape (:, numbands, numbands)
+            Phonon eigenvectors evaluated at input q
+            Default: recalculated from self.zerocalc
+
+        Returns
+        -------
+        Y: np.array of complex
+            shape (len(q), numbands, numbands)
+            Represents Y_{\nu_1,\nu_2}(q), the strengths of the
+            1-electron-2-phonon processes, expressed in 1e-10 m
+
+        """
+
         outer_product = lambda A: A[...,:,None]*A[...,None,:]
         if freqs is None or eigvecs is None:
-            freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(q, unit="THz", convention="c-type",
-                                                                          include_nac=include_nac, clean_value=1e-3)
-        dynmats_derE = self.dynmats_derE_interpolate(q, freq_unit="THz", convention="c-type", Efield_unit='V/Ang')
+            # We divide by square roots of the phonon frequencies, so they
+            # must be positive: therefore we set clean_value = 1e-3
+            freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
+                q, unit="THz", convention="c-type", include_nac=include_nac, 
+                clean_value=1e-3)
+        dynmats_derE = self.dynmats_derE_interpolate(q, freq_unit="THz", 
+                                                     convention="c-type", 
+                                                     Efield_unit='V/Ang')
         freqs_invsqrt = outer_product(1/np.sqrt(freqs))
-        return -0.5j * 0.004135667 * freqs_invsqrt* (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
+        return -0.5j * 0.004135667 * freqs_invsqrt* \
+            (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
     
-    def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", sigma=None,
-                         omega=None, num_omegas=1001, moments=None, moments_scaling_frequency=None, q_split_levels=0, 
-                         parallel_jobs=1, savedata_filename=None, savetxt_filename=None, savefigures_filename=None, 
-                         text_sizes=(13, 15, 16), title=None, colors=None, ):
+    def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", 
+                         sigma=None, omega=None, num_omegas=1001, moments=None, 
+                         moments_scaling_frequency=None, q_split_levels=0, 
+                         parallel_jobs=1, savedata_filename=None, 
+                         savetxt_filename=None, savefigures_filename=None, 
+                         text_sizes=(13, 15, 16), title=None, colors=None):
         # Calculate T(omega) with the smearing method and interpolation for Y, at temperature zero
         
 
         phonon_freqs_input_units = self.zerocalc.get_frequencies(unit)
-        omega_max = np.max(phonon_freqs_input_units)*2  # Remember T(omega) can reach twice the highest frequency
+        omega_max = np.max(phonon_freqs_input_units)*2
         omega_min = np.min(phonon_freqs_input_units)
         if moments_scaling_frequency is None:
             # Choose the highest frequency at Gamma as the moments scaling frequency by default
-            moments_scaling_frequency = np.max(self.zerocalc.get_freqs_eigvecs_interpolated(np.array([0.0,0.0,0.0]), 
-                                                                                            include_nac="Gonze")[0])
+            moments_scaling_frequency = \
+                np.max(self.zerocalc.get_freqs_eigvecs_interpolated(\
+                    np.array([0.0,0.0,0.0]), include_nac="Gonze")[0])
         if omega is None:
             # Set the default range of omega if none is provided
-            # We include the lowest and highest phonon frequency, and round to make the result look nicer
             rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
             omega_min_scale = np.trunc(omega_min/rounding_scale)*rounding_scale 
             omega_max_scale = np.ceil(omega_max/rounding_scale)*rounding_scale 
-            omega_input_units = np.linspace(omega_min_scale, omega_max_scale, num=num_omegas, endpoint=True)
+            omega_input_units = np.linspace(omega_min_scale, omega_max_scale, 
+                                            num=num_omegas, endpoint=True)
         else:
             omega_input_units = omega
-        omega = self.zerocalc.convert_units(omega_input_units, from_unit=unit, to_unit="THz")
+        omega = self.zerocalc.convert_units(omega_input_units, from_unit=unit, 
+                                            to_unit="THz")
         if not sigma:
             # Set the default value of sigma if none is provided
             sigma = 0.01*(omega_max - omega_min)
         else:
             # We must convert sigma from the input units to THz
-            sigma = self.zerocalc.convert_units(sigma, from_unit=unit, to_unit="THz")
+            sigma = self.zerocalc.convert_units(sigma, from_unit=unit, 
+                                                to_unit="THz")
         
-        # Convert input q_mesh_size_array into the correct format, a 1D array of size num_dimensions:
+        # Convert input q_mesh_size_array into the correct format,
+        # a 1D array of size num_dimensions:
         match q_mesh_size:
             case int():
-                q_mesh_size_array = np.repeat(q_mesh_size, self.zerocalc.num_dimensions)
+                q_mesh_size_array = np.repeat(q_mesh_size, 
+                                              self.zerocalc.num_dimensions)
             case np.ndarray():
-                q_mesh_size_array = np.floor(q_mesh_size).astype(int).flatten()[0:self.zerocalc.num_dimensions]
+                q_mesh_size_array = np.floor(q_mesh_size).astype(int).flatten()\
+                    [0:self.zerocalc.num_dimensions]
             case _:
-                raise ValueError("q_mesh_size must be one integer or a numpy array of integers")
+                raise ValueError("""q_mesh_size must be one integer
+                                 or a numpy array of integers""")
         q_split_levels = int(q_split_levels)
         if q_split_levels < 0 or q_split_levels > self.zerocalc.num_dimensions:
-            raise ValueError("q_split_levels must be between 0 and the number of dimensions (usually 3)")
+            raise ValueError("""q_split_levels must be between 0 and 
+                             the number of dimensions (usually 3)""")
         if q_split_levels == 0:
-            # We store all q-points in one big array and pass them all at the same time
+            # We store all q-points in one big array and pass them all at once
             qs = self.zerocalc.get_dense_qmesh(q_mesh_size_array)
-            Tomega_LATO = self.Tomega_LATO_smearing(omega, qs, sigma, include_nac=include_nac)
+            Tomega_LATO = self.Tomega_LATO_smearing(omega, qs, sigma, 
+                                                    include_nac=include_nac)
         else:
-            # We generate the q-points in smaller arrays, with q_split_levels indices fixed, and then add everything up
-            # This is slower but uses much less memory, since we don't need to store a massive q-point array
-            # Use this when the requested q_mesh_size is rather large, depending on your system
-            qs_fixed = self.zerocalc.get_dense_qmesh(q_mesh_size_array[-q_split_levels:], num_dimensions=q_split_levels)
+            # We generate the q-points in smaller arrays, with q_split_levels 
+            # indices fixed, and then add everything up.
+            # This is slower but uses much less memory, since we don't need to 
+            # store a massive q-point array.
+            # Use this when the requested q_mesh_size is rather large, 
+            # depending on your system
+            qs_fixed = self.zerocalc.get_dense_qmesh(\
+                q_mesh_size_array[-q_split_levels:], 
+                num_dimensions=q_split_levels)
             if parallel_jobs > 1:
-                T_omega_terms = joblib.Parallel(n_jobs=parallel_jobs)(joblib.delayed(self.Tomega_LATO_smearing)(omega, 
-                        self.zerocalc.get_dense_qmesh(q_mesh_size_array[:-q_split_levels], fixed_indices=q_fixed), 
-                        sigma, include_nac=include_nac) for q_fixed in qs_fixed)
+                T_omega_terms = joblib.Parallel(n_jobs=parallel_jobs)(\
+                    joblib.delayed(self.Tomega_LATO_smearing)(\
+                        omega, self.zerocalc.get_dense_qmesh(\
+                            q_mesh_size_array[:-q_split_levels], 
+                            fixed_indices=q_fixed), 
+                        sigma, include_nac=include_nac) 
+                    for q_fixed in qs_fixed)
             else:
                 T_omega_terms = [self.Tomega_LATO_smearing(omega, 
-                        self.zerocalc.get_dense_qmesh(q_mesh_size_array[:-q_split_levels], fixed_indices=q_fixed), 
+                        self.zerocalc.get_dense_qmesh(\
+                            q_mesh_size_array[:-q_split_levels], 
+                            fixed_indices=q_fixed), 
                         sigma, include_nac=include_nac) for q_fixed in qs_fixed]
             Tomega_LATO = sum(T_omega_terms) / len(qs_fixed)
         
         # Get all the different resolutions from Tomega_LATO
-        partials_list = [[[0],[1],[2],[3]], [[0,2],[1,3]], [[0,1],[2,3]], [[0,1,2,3]]]
-        # In order, this is LATO resolution, LT resolution, AO resolution, no resolution
+        partials_list = [[[0],[1],[2],[3]], [[0,2],[1,3]],
+                         [[0,1],[2,3]], [[0,1,2,3]]]
+        # In order, this is LATO resolution, LT resolution, AO resolution, 
+        # and no resolution
         Tomega_resolutions = []
         Tmoments_resolutions = []
         for partials in partials_list:
-            Tomega_current = np.empty((len(omega_input_units), len(partials), len(partials))) 
+            Tomega_current = np.empty((len(omega_input_units), len(partials), 
+                                       len(partials))) 
             for index2, sum_indices_x in enumerate(partials):
                 for index3, sum_indices_y in enumerate(partials):
                     sum_where = np.zeros_like(Tomega_LATO[0], dtype=bool)
                     sum_where[np.ix_(sum_indices_x, sum_indices_y)] = True
-                    Tomega_current[:, index2, index3] = np.sum(Tomega_LATO, axis=(1,2), where=sum_where)
+                    Tomega_current[:, index2, index3] = \
+                        np.sum(Tomega_LATO, axis=(1,2), where=sum_where)
             if moments is not None:
-                Tmoments_current = np.zeros((len(moments), len(partials), len(partials)))
+                Tmoments_current = np.zeros((len(moments), len(partials), 
+                                             len(partials)))
                 nonzero_indices = np.abs(omega_input_units)>1e-10
                 nonzero_omegas = omega_input_units[nonzero_indices]
                 for index, n in enumerate(moments):
                     omega_power = np.zeros_like(omega_input_units)
                     omega_power[nonzero_indices] = np.power(nonzero_omegas, n)
-                    Tmoments_current[index, ...] = np.power(moments_scaling_frequency, -(n+1)) * \
+                    Tmoments_current[index, ...] = \
+                        np.power(moments_scaling_frequency, -(n+1)) * \
                         scipy.integrate.simpson(Tomega_current*omega_power[:,None,None], x=omega_input_units, axis=0)
             else:
                 Tmoments_current = []
@@ -2808,13 +2974,16 @@ class YCalculation():
         Tomega = Tomega_resolutions[3][:,0,0]
         Tmoments = Tmoments_resolutions[3][:,0,0]
         if savedata_filename is not None:
-            np.savez(savedata_filename, 
-                     q_mesh_size=q_mesh_size, unit=unit, include_nac=include_nac, sigma=sigma, moments=moments, 
-                     moments_scaling_frequency=moments_scaling_frequency, omega=omega_input_units, omega_max=omega_max, 
-                     Tomega_LATO=Tomega_LATO, Tomega_LT=Tomega_LT, Tomega_AO=Tomega_AO, Tomega=Tomega, 
-                     Tmoments_LATO=Tmoments_LATO, Tmoments_LT=Tmoments_LT, Tmoments_AO=Tmoments_AO, Tmoments=Tmoments)
+            np.savez(savedata_filename, q_mesh_size=q_mesh_size, unit=unit, 
+                     include_nac=include_nac, sigma=sigma, moments=moments, 
+                     moments_scaling_frequency=moments_scaling_frequency, 
+                     omega=omega_input_units, omega_max=omega_max, 
+                     Tomega_LATO=Tomega_LATO, Tomega_LT=Tomega_LT, 
+                     Tomega_AO=Tomega_AO, Tomega=Tomega, 
+                     Tmoments_LATO=Tmoments_LATO, Tmoments_LT=Tmoments_LT, 
+                     Tmoments_AO=Tmoments_AO, Tmoments=Tmoments)
             
-        # Plot figures of the different resolutions, except the case of no resolution:
+        # Plot figures of the different resolutions:
         labels_list = [ ["TA", "LA", "TO", "LO"], ["T", "L"], ["A", "O"] ]
         label_names = ["LATO", "LT", "AO"]
         if colors is None:
@@ -2830,7 +2999,9 @@ class YCalculation():
                 (0.4, 0.4, 0.7),
                 (0.5, 1.0, 0.5)
             ]
-        for labels, name,  partials, Tomega_res in zip(labels_list, label_names, partials_list[:-1], Tomega_resolutions):
+        for labels, name,  partials, Tomega_res \
+            in zip(labels_list, label_names, partials_list[:-1], 
+                   Tomega_resolutions):
             num_partials = len(partials)
             num_contributions = int(num_partials*(num_partials+1)/2)
             T_contributions = np.zeros((num_contributions, len(omega)))
@@ -2841,12 +3012,16 @@ class YCalculation():
                 contribution_labels.append(labels[index1]+"-"+labels[index1])
                 count += 1
                 for index2 in range(index1+1, num_partials):
-                    T_contributions[count] = Tomega_res[:, index1, index2] + Tomega_res[:, index2, index1]
-                    contribution_labels.append(labels[index1]+"-"+labels[index2])
+                    T_contributions[count] = Tomega_res[:, index1, index2] + \
+                        Tomega_res[:, index2, index1]
+                    contribution_labels.append(labels[index1]+"-"+\
+                                               labels[index2])
                     count += 1
             
             if name=="LATO" and savetxt_filename is not None:
-                full_data_array = np.transpose(np.append(np.array([omega, Tomega]), T_contributions, axis=0))
+                full_data_array = \
+                    np.transpose(np.append(np.array([omega, Tomega]), 
+                                           T_contributions, axis=0))
                 np.savetxt(savetxt_filename+".txt", full_data_array,
                         header="  Frequency (THz)      "+\
                                 "    T(omega), total      "+\
@@ -2862,9 +3037,10 @@ class YCalculation():
                                 "    T(omega), LO-LO      ")
             
             fig, ax = plt.subplots()
-            plot_handles = ax.stackplot(omega, T_contributions, labels=contribution_labels,
-                                        colors=colors)
-            plot_handle_total, = ax.plot(omega, Tomega, color="black", label="Total")
+            plot_handles = ax.stackplot(omega, T_contributions, colors=colors,
+                                        labels=contribution_labels)
+            plot_handle_total, = ax.plot(omega, Tomega, color="black", 
+                                         label="Total")
             plot_handles.append(plot_handle_total)
             
             if title is None:
@@ -2883,41 +3059,84 @@ class YCalculation():
         return omega_input_units, Tomega, Tmoments
     
     def Tomega_LATO_smearing(self, omegas, qs, sigma, include_nac="None"):
-        # Internal function that calculates the LATO-resolved version of T_omega, using the smearing method
+        """ Compute LATO-resolved T(omega) with the smearing method
+        
+        Uses the trapezoid rule for Brillouin zone integration
+
+        This function isn't supposed to be called by the user,
+        it simply summarizes the used algorithm into a single function
+
+        Arguments
+        ---------
+        omegas: np.array of real
+            shape (:)
+            Array of frequencies at which T(omega) is to be evaluated
+        qs: np.array of real
+            shape (:, 3)
+            Dense mesh of q-points for the Brillouin zone integration
+        sigma: real
+            Delta function smearing width, in THz
+        include_nac: str
+            Mode of NAC correction, "None", "Gonze", or "Wang"
+
+        Returns
+        -------
+        T_omega: np.array of real
+            shape (len(omegas), 4, 4)
+            LATO-resolved T(omega) evaluated at the input omegas
+
+        """
         numbands = self.zerocalc.numbands
-        eV_to_dimensionless = 21876.91262642702/self.zerocalc.unitcell_volume  # Prefactor for T(omega), omega in THz
+        # Prefactor for T(omega), omega in THz:
+        eV_to_dimensionless = 21876.91262642702/self.zerocalc.unitcell_volume
         # Define the smeared delta function:
         two_sigma_squared = 2*sigma*sigma
-        delta_smeared = lambda x : np.exp(- x*x/two_sigma_squared)/np.sqrt(np.pi*two_sigma_squared)
-        # Calculate the interpolated phonon frequencies:
-        # NOTE: we clean the frequencies so we don't get issues by dividing by the acoustic frequencies
-        phonon_freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(qs, unit="THz", include_nac=include_nac, 
-                                                                             clean_value=1e-3, convention="c-type")
+        delta_smeared = lambda x : np.exp(- x*x/two_sigma_squared)\
+            /np.sqrt(np.pi*two_sigma_squared)
+        # Calculate the interpolated phonon frequencies
+        # Note: we clean the acoustic frequencies because we divide by them
+        phonon_freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
+            qs, unit="THz", include_nac=include_nac, clean_value=1e-3, 
+            convention="c-type")
         # Calculate the LATO weights for each band:
         LATO_weights = self.zerocalc.get_LATO_weights(qs, eigenvectors=eigvecs)
         # Define an array that represents omega_{q, nu1} + omega_{q, nu2}
-        omega_sum = phonon_freqs.reshape((-1,numbands,1)) + phonon_freqs.reshape((-1,1,numbands))
-        # Define an array that represents |Y_{nu1, nu2}(q)|^2, with the same index layout as omega_sum
-        Y2s = np.abs(self.Y_interpolate(qs, include_nac=include_nac, freqs=phonon_freqs, eigvecs=eigvecs))**2
+        omega_sum = phonon_freqs.reshape((-1,numbands,1))\
+              + phonon_freqs.reshape((-1,1,numbands))
+        # Define an array that represents |Y_{nu1, nu2}(q)|^2
+        Y2s = np.abs(self.Y_interpolate(qs, include_nac=include_nac, 
+                                        freqs=phonon_freqs, eigvecs=eigvecs))**2
         # Define T(omega) as calculated with the trapezoid rule:
         T_func = lambda x : eV_to_dimensionless * \
-            np.mean( np.conjugate(LATO_weights) @ (Y2s*delta_smeared(x-omega_sum)) @ np.swapaxes(LATO_weights, -1, -2), axis=0)
+            np.mean(np.conjugate(LATO_weights)@(Y2s*delta_smeared(x-omega_sum))\
+                     @ np.swapaxes(LATO_weights, -1, -2), axis=0)
         #Iterate T_func over all elements in omega:
-        T_omega = np.empty((len(omegas), LATO_weights.shape[1], LATO_weights.shape[1]))
+        T_omega = np.empty((len(omegas), LATO_weights.shape[1], 
+                            LATO_weights.shape[1]))
         for index, freq in enumerate(omegas):
-            T_omega[index, ...] = np.real(T_func(freq))  # Ensure output is real
+            T_omega[index, ...] = np.real(T_func(freq)) # Ensure output is real
         return T_omega
     
-    def plotY(self, path, path_labels, npoints=51, num_markers=None, include_nac="None", title1=None, 
-              title2=None, degenerate_cutoff=1e-3, Y2_norm_value=None, Y2_sum_norm_value=None, save_filename=None, 
-              plot_style=None, plot_highlight_style=None, band_label_permutations=None, marker_style=None, 
-              subplots=None, shareaxes=False, figsize=None, text_sizes=(13, 15, 16), plot_range=None):
+    def plotY(self, path, path_labels, npoints=51, num_markers=None, 
+              include_nac="None", title1=None, title2=None, 
+              degenerate_cutoff=1e-3, Y2_norm_value=None, 
+              Y2_sum_norm_value=None, save_filename=None, 
+              plot_style=None, plot_highlight_style=None, 
+              band_label_permutations=None, marker_style=None, 
+              subplots=None, shareaxes=False, figsize=None, 
+              text_sizes=(13, 15, 16), plot_range=None):
+        
+        
+
+
         if plot_style is None:
             plot_style = dict(color="black", linestyle="solid", linewidth=1)
         if plot_highlight_style is None:
-            plot_highlight_style = dict(color="red", linestyle="solid", linewidth=1)
+            plot_highlight_style = dict(color="red", linestyle="solid", 
+                                        linewidth=1)
         if marker_style is None:
-            marker_style = dict(marker='o', color='lightblue', edgecolors='black', linewidth=0.5, alpha=1.0,
+            marker_style = dict(marker='o', color='lightblue', 
+                                edgecolors='black', linewidth=0.5, alpha=1.0,
                                 max_radius=10)
         if figsize is None and subplots is not None:
             figsize = (6.4*subplots[1], 4.8*subplots[0])
@@ -2930,39 +3149,48 @@ class YCalculation():
         set_title2 = title2 is None
         
         unit="THz"
-        qs, distances, xaxis_labels, jump_indices = self.zerocalc.parse_path(path, path_labels, npoints=npoints)
-        omegas, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(qs, unit=unit, convention="c-type",
-                                                                       include_nac=include_nac, clean_value=1e-3)
+        qs, distances, xaxis_labels, jump_indices = \
+            self.zerocalc.parse_path(path, path_labels, npoints=npoints)
+        omegas, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
+            qs, unit=unit, convention="c-type", include_nac=include_nac, 
+            clean_value=1e-3)
         if band_label_permutations is None:
-            band_label_permutations = self.zerocalc.get_label_permutations(qs, eigvecs, jump_indices)
+            band_label_permutations = self.zerocalc.get_label_permutations(\
+                qs, eigvecs, jump_indices)
             
-        distances_markers = np.linspace(np.min(distances), np.max(distances), num_markers)
+        distances_markers = np.linspace(np.min(distances), np.max(distances), 
+                                        num_markers)
         distances_array = np.tile(distances_markers, (number_of_bands,1)).T
-        qs_markers = scipy.interpolate.griddata(distances, qs, distances_markers)
-        perms_markers = scipy.interpolate.griddata(distances, band_label_permutations, distances_markers, 
-                                                   method='nearest')
+        qs_markers = scipy.interpolate.griddata(distances, qs, 
+                                                distances_markers)
+        perms_markers = scipy.interpolate.griddata(\
+            distances, band_label_permutations, distances_markers, 
+            method='nearest')
         
-        omegas_markers, eigvecs_markers = self.zerocalc.get_freqs_eigvecs_interpolated(qs_markers, unit=unit, 
-                                                        convention="c-type", include_nac=include_nac, clean_value=1e-3)
-        # Ys = self.Y_interpolate(qs_markers, include_nac=include_nac, freqs=omegas_markers, eigvecs=eigvecs_markers)
-        # Ys2_markers = np.real(Ys*Ys.conj())
-        # # Sum over the first index of |Y|^2 to get a quantity of the same shape as omega_{q,nu}
-        # Ys2_sum_markers = np.sum(Ys2_markers, axis=1)
+        omegas_markers, _ = self.zerocalc.get_freqs_eigvecs_interpolated(\
+            qs_markers, unit=unit, convention="c-type", include_nac=include_nac,
+            clean_value=1e-3)
         
-        Ys = self.Y_interpolate(qs, include_nac=include_nac, freqs=omegas, eigvecs=eigvecs)
+        Ys = self.Y_interpolate(qs, include_nac=include_nac, freqs=omegas, 
+                                eigvecs=eigvecs)
         Ys2 = np.real(Ys*Ys.conj())
         Ys2_sum = np.sum(Ys2, axis=1)
-        omegas_markers = scipy.interpolate.griddata(distances, omegas, distances_markers)
-        Ys2_markers = scipy.interpolate.griddata(distances, Ys2, distances_markers)
-        Ys2_sum_markers = scipy.interpolate.griddata(distances, Ys2_sum, distances_markers)
+        omegas_markers = scipy.interpolate.griddata(distances, omegas, 
+                                                    distances_markers)
+        Ys2_markers = scipy.interpolate.griddata(distances, Ys2, 
+                                                 distances_markers)
+        Ys2_sum_markers = scipy.interpolate.griddata(distances, Ys2_sum, 
+                                                     distances_markers)
         
         # Identify the degenerate phonon bands of the interpolated phonon bands
         degenerates = np.full((len(omegas_markers), number_of_bands), False)
         max_omega = np.max(omegas)
-        degenerates[:,1:] = np.array([(omegas_markers[:,i+1]-omegas_markers[:,i])/max_omega < degenerate_cutoff
-                                      for i in range(number_of_bands-1)]).T
+        degenerates[:,1:] = \
+            np.array([(omegas_markers[:,i+1]-omegas_markers[:,i])/max_omega \
+                      < degenerate_cutoff for i in range(number_of_bands-1)]).T
         
-        # Sum over all degenerate branches in the second index of |Y|^2, put the result in the first degenerate branch
+        # Sum over all degenerate branches in the second index of |Y|^2,
+        # then put the result in the first degenerate branch
         Ys2_markers_degen = np.empty_like(Ys2_markers)
         Ys2_sum_markers_degen = np.empty_like(Ys2_sum_markers)
         for index, (Y2, Y2_sum) in enumerate(zip(Ys2_markers, Ys2_sum_markers)):
@@ -2976,9 +3204,11 @@ class YCalculation():
                     temporary_list = []
             for indices in degenerate_list:
                 Ys2_markers_degen[index, :, indices] = 0.
-                Ys2_markers_degen[index, :, indices[0]] = np.sum(Y2[:, indices], axis=1)
+                Ys2_markers_degen[index, :, indices[0]] = np.sum(Y2[:, indices],
+                                                                 axis=1)
                 Ys2_sum_markers_degen[index, indices] = 0.
-                Ys2_sum_markers_degen[index, indices[0]] = np.sum(Y2_sum[indices])
+                Ys2_sum_markers_degen[index, indices[0]] = \
+                    np.sum(Y2_sum[indices])
 
         # Normalize |Y|^2
         Y2_max_value = np.max(Ys2_markers_degen)
@@ -2990,10 +3220,14 @@ class YCalculation():
             Y2_sum_norm_value = Y2_max_value
         Ys2_sum_norm = Ys2_sum_markers_degen/Y2_sum_norm_value
         
-        omegas_perm = np.array([omegas[i] @ band_label_permutations[i] for i in range(len(omegas))])
-        omegas_markers_perm = np.array([omegas_markers[i] @ perms_markers[i] for i in range(len(omegas_markers))])
-        Ys2_perm = np.array([perms_markers[i].T @ Ys2_norm[i] @ perms_markers[i] for i in range(len(Ys2_norm))])
-        Ys2_sum_perm = np.array([Ys2_sum_norm[i] @ perms_markers[i] for i in range(len(Ys2_sum_norm))])
+        omegas_perm = np.array([omegas[i] @ band_label_permutations[i] 
+                                for i in range(len(omegas))])
+        omegas_markers_perm = np.array([omegas_markers[i] @ perms_markers[i] 
+                                        for i in range(len(omegas_markers))])
+        Ys2_perm = np.array([perms_markers[i].T @ Ys2_norm[i] @ perms_markers[i]
+                             for i in range(len(Ys2_norm))])
+        Ys2_sum_perm = np.array([Ys2_sum_norm[i] @ perms_markers[i] 
+                                 for i in range(len(Ys2_sum_norm))])
         
         if subplots is None:
             fig_handles = []
@@ -3003,7 +3237,8 @@ class YCalculation():
                 fig_handles.append(fig)
                 ax_handles.append(ax)              
         else:
-            fig, axs = plt.subplots(subplots[0], subplots[1], sharex=shareaxes, sharey=shareaxes, figsize=figsize)
+            fig, axs = plt.subplots(subplots[0], subplots[1], sharex=shareaxes,
+                                    sharey=shareaxes, figsize=figsize)
             fig_handles = [fig]
             ax_handles = axs.flat
         plot_handles = []
@@ -3011,7 +3246,8 @@ class YCalculation():
         if plot_range is None:
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            if omega_min < -self.convert_units(0.1, from_unit="THz", to_unit=unit):
+            if omega_min < -self.convert_units(0.1, from_unit="THz", 
+                                               to_unit=unit):
                 # Include the unstable phonon modes in the plot
                 omega_min_scale, omega_max_scale = \
                     round_plot_range(omega_min, omega_max)
@@ -3026,11 +3262,15 @@ class YCalculation():
         for index, ax in enumerate(ax_handles):
             marker_sizes = marker_max_radius**2*Ys2_perm[:,index,:]
             
-            # fig, ax = plt.subplots()
-            plot_handles_this = ax.plot(distances, np.delete(omegas_perm, index, axis=1), **plot_style, zorder=5)
-            plot_handle_highlighted_line = ax.plot(distances, omegas_perm[:,index], **plot_highlight_style, zorder=10)
-            plot_handle_markers = ax.scatter(distances_array, omegas_markers_perm, s=marker_sizes, **marker_style, 
-                                             zorder=0)
+            plot_handles_this = \
+                ax.plot(distances, np.delete(omegas_perm, index, axis=1), 
+                        **plot_style, zorder=5)
+            plot_handle_highlighted_line = \
+                ax.plot(distances, omegas_perm[:,index], 
+                        **plot_highlight_style, zorder=10)
+            plot_handle_markers = \
+                ax.scatter(distances_array, omegas_markers_perm, s=marker_sizes,
+                           **marker_style, zorder=0)
             plot_handles_this.append(plot_handle_highlighted_line)
             plot_handles_this.append(plot_handle_markers)
             
@@ -3051,9 +3291,12 @@ class YCalculation():
             
             # Plot unstable region in case of imaginary phonon frequencies
             if omega_min_scale < 0:
-                ax.axhline(y=0.0, color='black', linewidth=1.0, linestyle="dashed")
-                ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), distances[-1]-distances[0], -omega_min_scale,
-                                           fill=True, color=(0.8, 0.8, 0.8), zorder=-10))
+                ax.axhline(y=0.0, color='black', linewidth=1.0, 
+                           linestyle="dashed")
+                ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), 
+                                           distances[-1]-distances[0], 
+                                           -omega_min_scale, fill=True, 
+                                           color=(0.8, 0.8, 0.8), zorder=-10))
             
             plot_handles.append(plot_handles_this)
             if save_filename is not None and subplots is None:
@@ -3067,8 +3310,11 @@ class YCalculation():
             
         fig, ax = plt.subplots()
         marker_sizes = marker_max_radius**2*Ys2_sum_perm
-        plot_handles_this = ax.plot(distances, omegas_perm, **plot_style, zorder=5)
-        plot_handle_markers = ax.scatter(distances_array, omegas_markers_perm, s=marker_sizes, **marker_style, zorder=0)
+        plot_handles_this = \
+            ax.plot(distances, omegas_perm, **plot_style, zorder=5)
+        plot_handle_markers = \
+            ax.scatter(distances_array, omegas_markers_perm, s=marker_sizes, 
+                       **marker_style, zorder=0)
         plot_handles_this.append(plot_handle_markers)
         xaxis_ticks = np.append(distances[0::npoints], distances[-1])
         if set_title2:
@@ -3085,12 +3331,15 @@ class YCalculation():
         # Plot unstable region in case of imaginary phonon frequencies
         if omega_min_scale < 0:
             ax.axhline(y=0.0, color='black', linewidth=1.0, linestyle="dashed")
-            ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), distances[-1]-distances[0], -omega_min_scale,
-                                       fill=True, color=(0.8, 0.8, 0.8), zorder=-10))
+            ax.add_patch(plt.Rectangle((distances[0], omega_min_scale), 
+                                       distances[-1]-distances[0], 
+                                       -omega_min_scale, fill=True, 
+                                       color=(0.8, 0.8, 0.8), zorder=-10))
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
             fig.savefig(save_filename+"_summed.pdf")
         
-        return Y2_max_value, Y2_sum_max_value, fig_handles, ax_handles, plot_handles
+        return Y2_max_value, Y2_sum_max_value, fig_handles, ax_handles, \
+            plot_handles
     
