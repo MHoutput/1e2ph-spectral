@@ -13,7 +13,7 @@ PhonoPy postprocessing code to calculate the 1-electron-2-phonon spectral functi
 
 # Basic usage
 ## Code
-- *main.py* reproduces all figures from the publication. Set recalculate=True to explicitly recalculate the 1-electron-2-phonon spectral functions; otherwise, this data is read from the precalculated *results* directory.
+- *main.py* reproduces all figures from the two publications at https://arxiv.org/abs/2412.09470 and https://arxiv.org/abs/2412.09456. Set recalculate=True to explicitly recalculate the 1-electron-2-phonon spectral functions; otherwise, this data is read from the precalculated *results* directory.
 - *phonopyReaders.py* contains all functions and classes that interface with the PhonoPy data. See main.py for example usage.
 - *pathsLabels.py* contains a method that contains information for the high-symmetry paths of cubic Brillouin zones.
 
