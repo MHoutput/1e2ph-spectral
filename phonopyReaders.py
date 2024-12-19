@@ -2857,14 +2857,158 @@ class YCalculation():
                          parallel_jobs=1, savedata_filename=None, 
                          savetxt_filename=None, savefigures_filename=None, 
                          text_sizes=(13, 15, 16), title=None, colors=None):
-        # Calculate T(omega) with the smearing method and interpolation for Y, at temperature zero
+        """ Calculate and plot T(omega) with the smearing method
+
+        This functional offers functionality to calculate the 
+        LATO-resolved 1-electron-2-phonon spectral function,
+        write the results to a file or save them in a .npz file,
+        and plotting the result in a graph.
+        The Brillouin zone integral is calculated with the trapezoid
+        rule, with Gaussian smearing for the delta functions
+
+        Arguments
+        ---------
+        q_mesh_size: int, or np.array of int
+            Determines the size of the N x N x N fine q-grid which is
+            used for Brillouin zone integration
+            Default: 8
+        unit: str
+            Phonon frequency unit, default "THz"
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        sigma: real
+            Gaussian smearing width for the delta functions, in units
+            of the phonon frequency
+            It's safer to always specify a value explicitly
+            Default: 0.01*(2*max(omega_ph) - min(omega_ph))
+        omega: np.array of real
+            shape (:, )
+            Frequencies at which T(omega) is to be calculated
+            Default: num_omega points between 0 and 2*max(omega_ph),
+            rounded up
+        num_omegas: int
+            Number of frequencies if no array is specified for omega
+            Default: 1001
+        moments: np.array of real
+            shape (:, )
+            Exponents for the moments of T(omega) to be calculated
+            Most interesting case: np.array([-0.5, -1.0, -1.5])
+            Default: None, moments are not calculated
+        moments_scaling_frequency: real
+            Scaling frequency to make the moments dimensionless
+            Stored values are T_n/(moments_scaling_frequency)^(n+1)
+            Default: highest phonon frequency at Gamma
+        q_split_levels: int, between 0 and 3
+            Controls how many of the fine q-mesh points are generated
+            at once. In general, only one (3 - q_split_levels)-
+            dimensional slice of the q-mesh is generated and stored 
+            at a time. The calculation is parallellized over each
+            slive. Useful for very large q-meshes which would
+            otherwise take up too much memory (e.g. 128x128x128).
+            Default: 0, the entire array is generated at once
+        parallel_jobs: int
+            Number of parallel processes used for the Brillouin zone
+            integral, can only be used when q_split_levels > 0
+            Default: 1
+        savedata_filename: str
+            Filename to store the resulting data in an .npz file
+            The following variables will be stored:
+                - q_mesh_size
+                - unit
+                - include_nac
+                - sigma
+                - moments
+                - moments_scaling_frequency
+                - omega
+                - omega_max, upper end of the frequency range
+                - Tomega, 1-electron-2-phonon spectral function
+                - Tomega_AO, with acoustic/optical distinction
+                - Tomega_LT, with longitudinal/transverse distinction
+                - Tomega_LATO, with full LATO distinction
+                - Tmoments, moments of the 1e2ph spectral function
+                - Tmoments_LT, with acoustic/optical distinction
+                - Tmoments_AO, with longitudinal/transverse distinction
+                - Tmoments_LATO, with full LATO distinction
+            Default: None, the calculation data is not saved
+        savetxt_filename: str
+            Filename to store the resulting data in a .txt file
+            It will contain a column with the frequency in the input
+            units, a column with the total T(omega), and 10 columns
+            with the separate LATO contributions
+            The filename should not include the extension ".txt"
+            Default: None, the calculation result is not stored
+        save_filename: str
+            Save all figures with the given common filename, 
+            in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        title: str
+            Title for the figure
+            Default: "1-electron-2-phonon spectral function"
+        colors: List of 10 colors
+            Colors to be used for the stackplot of LATO contributions
+            Default: 
+            [
+                (0.7, 0.4, 0.4),
+                (0.7, 0.7, 1.0),
+                (0.5, 0.5, 0.5),
+                (0.9, 0.6, 0.9),
+                (0.4, 0.6, 0.4),
+                (0.9, 0.9, 0.5),
+                (0.4, 0.6, 0.7),
+                (1.0, 0.6, 0.6),
+                (0.4, 0.4, 0.7),
+                (0.5, 1.0, 0.5)
+            ]
+
+
+        
+
+        Returns
+        -------
+        omega: np.array of real
+            shape (:, )
+            Frequencies at which T(omega) is calculated, in input units
+        Tomega: np.array of real
+            shape (len(omega), 4, 4)
+            LATO-resolved T(omega) at the given frequencies
+        Tmoments: np.array of real
+            shape (len(moments), 4, 4)
+            LATO-resolved moments of T(omega)
+        fig: figure handle
+        ax: axis handle
+        plot_handle: handle to the plot data
+
+        Raises
+        ------
+        ValueError
+            when q_mesh_size is not an int
+            or an np.array of int of shape (3,)
+        ValueError
+            when q_split_levels is not between 0 and 3
+
+        """
         
 
         phonon_freqs_input_units = self.zerocalc.get_frequencies(unit)
         omega_max = np.max(phonon_freqs_input_units)*2
         omega_min = np.min(phonon_freqs_input_units)
         if moments_scaling_frequency is None:
-            # Choose the highest frequency at Gamma as the moments scaling frequency by default
+            # Choose the highest frequency at Gamma as the 
+            # moments scaling frequency by default
             moments_scaling_frequency = \
                 np.max(self.zerocalc.get_freqs_eigvecs_interpolated(\
                     np.array([0.0,0.0,0.0]), include_nac="Gonze")[0])
@@ -2960,7 +3104,9 @@ class YCalculation():
                     omega_power[nonzero_indices] = np.power(nonzero_omegas, n)
                     Tmoments_current[index, ...] = \
                         np.power(moments_scaling_frequency, -(n+1)) * \
-                        scipy.integrate.simpson(Tomega_current*omega_power[:,None,None], x=omega_input_units, axis=0)
+                        scipy.integrate.simpson(\
+                            Tomega_current*omega_power[:,None,None],
+                            x=omega_input_units, axis=0)
             else:
                 Tmoments_current = []
             Tomega_resolutions.append(Tomega_current)
@@ -3020,10 +3166,10 @@ class YCalculation():
             
             if name=="LATO" and savetxt_filename is not None:
                 full_data_array = \
-                    np.transpose(np.append(np.array([omega, Tomega]), 
+                    np.transpose(np.append(np.array([omega_input_units,Tomega]), 
                                            T_contributions, axis=0))
                 np.savetxt(savetxt_filename+".txt", full_data_array,
-                        header="  Frequency (THz)      "+\
+                        header="  Frequency ("+unit+")"+" "*(9-len(unit))+\
                                 "    T(omega), total      "+\
                                 "    T(omega), TA-TA      "+\
                                 "    T(omega), TA-LA      "+\
@@ -3037,10 +3183,11 @@ class YCalculation():
                                 "    T(omega), LO-LO      ")
             
             fig, ax = plt.subplots()
-            plot_handles = ax.stackplot(omega, T_contributions, colors=colors,
+            plot_handles = ax.stackplot(omega_input_units, T_contributions, 
+                                        colors=colors, 
                                         labels=contribution_labels)
-            plot_handle_total, = ax.plot(omega, Tomega, color="black", 
-                                         label="Total")
+            plot_handle_total, = ax.plot(omega_input_units, Tomega, 
+                                         color="black", label="Total")
             plot_handles.append(plot_handle_total)
             
             if title is None:
@@ -3056,7 +3203,7 @@ class YCalculation():
             if savefigures_filename is not None:
                 fig.savefig(savefigures_filename+"_"+name+".pdf")
             
-        return omega_input_units, Tomega, Tmoments
+        return omega_input_units, Tomega, Tmoments, fig, ax, plot_handles
     
     def Tomega_LATO_smearing(self, omegas, qs, sigma, include_nac="None"):
         """ Compute LATO-resolved T(omega) with the smearing method
@@ -3120,13 +3267,121 @@ class YCalculation():
     def plotY(self, path, path_labels, npoints=51, num_markers=None, 
               include_nac="None", title1=None, title2=None, 
               degenerate_cutoff=1e-3, Y2_norm_value=None, 
-              Y2_sum_norm_value=None, save_filename=None, 
-              plot_style=None, plot_highlight_style=None, 
-              band_label_permutations=None, marker_style=None, 
-              subplots=None, shareaxes=False, figsize=None, 
+              Y2_sum_norm_value=None, band_label_permutations=None,
+              save_filename=None, plot_style=None, plot_highlight_style=None, 
+              marker_style=None, subplots=None, shareaxes=False, figsize=None, 
               text_sizes=(13, 15, 16), plot_range=None):
         
+        """ Plot |Y_{nu_1,nu_2}(q)|^2 over the phonon band structure
+
+        Makes an amount of plots of |Y_{nu_1,nu_2}(q)|^2 equal to
+        numbands, each where one phonon band is kept constant. The
+        markers are normalized to the maximum value of 
+        |Y_{nu_1,nu_2}(q)|^2 over all the pairs of bands.
+        Also makes a plot of sum_{nu_2}|Y_{nu_1,nu_2}(q)|^2.
+
+        Arguments
+        ---------
+        path: list of list of list of real
+            High-symmetry path to be plotted on the Brillouin zone
+            Follows the conventions of PhonoPy and pathsLabels.py: 
+                - First level: list of connected path segments
+                - Second level: list of points that mark path segments
+                - Third level: direct coordinates of points
+            Default: no path
+        path_labels: list of str
+            List of names of the edge points to be plotted on the path
+            Default: no labels
+        npoints: int
+            Number of q-points on every path segment
+            Default: 51
+        num_markers: int
+            Number of markers to plot over the length of the path
+            Default: 10 for every path segment
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "None"
+        unit: str
+            Phonon frequency unit, default "THz"
+        title1: str
+            Title of the numbands subplots
+            Default: "$|Y_{\\nu i,z}(\\mathbf{q})|^2$", where i
+            goes from 0 to numbands-1
+        title2: str
+            Title of the summarizing plot
+            Default:"$\\sum_{\\nu'} |Y_{\\nu \\nu',z}(\\mathbf{q})|^2$"
+        degenerate_cutoff: real
+            Tolerance for determining when two bands are degenerate
+            Default: 1e-3
+        Y2_norm_value: real
+            Value of |Y_{nu_1,nu_2}(q)|^2 that corresponds to the 
+            marker of size max_radius (defined in marker_style)
+            Default: maximum value of |Y_{nu_1,nu_2}(q)|^2
+        Y2_sum_norm_value: real
+            Value of sum_{nu_2} |Y_{nu_1,nu_2}(q)|^2 that 
+            corresponds to the marker of size max_radius
+            Default: equal to Y2_norm_value, markers have equal scale
+        band_label_permutations: np.array of int (only 0 or 1)
+            shape (:, numbands, numbands)
+            Label permutations output by self.get_label_permutations
+            Default: None, recalculate from the eigenvectors
+        save_filename: str
+            Save all figures with the given common filename, 
+            in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        plot_style: dict
+            Style parameters for the phonon band lines
+            Default: dict(color="black",linestyle="solid",linewidth=1)
+        plot_highlight_style: dict
+            Style parameters for the highlighted phonon band
+            Default: dict(color="red", linestyle="solid", linewidth=1)
+        marker_style: dict
+            Style parameters for the markers superimposed on the plot
+            Default: dict(marker='o', color='lightblue', max_radius=10,
+                          edgecolors='black', linewidth=0.5, alpha=1.0)
+        subplots: tuple of 2 ints, or None
+            If None, make numbands different figures
+            Otherwise, make one figure with numbands subplots,
+            arranged in an array of shape given by subplots
+            Default: None, all different figures
+        shareaxes: bool
+            Sets the shareaxes property of the subplots, if subplots
+            is not equal to None
+            Default: False
+        figsize: tuple of 2 ints
+            Sets the size of the figures in inches
+            Default: (6.4*subplots[1], 4.8*subplots[0])
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        plot_range: tuple of 2 reals
+            Minimum and maximum limits of the figure y-axis
+            Default: rounded range of num_omegas points between the
+            minimum and maximum phonon frequency
         
+        Returns
+        -------
+        Y2_max_value: real
+            Value of |Y_{nu_1,nu_2}(q)|^2 corresponding to the 
+            largest marker 
+        Y2_sum_max_value: real
+            Value of sum_{nu_2} |Y_{nu_1,nu_2}(q)|^2 corresponding
+            to the largest marker
+        fig: figure handle
+        ax: axis handle
+        plot_handle: handle to the plot data
+
+        """
 
 
         if plot_style is None:
@@ -3217,7 +3472,7 @@ class YCalculation():
             Y2_norm_value = Y2_max_value
         Ys2_norm = Ys2_markers_degen/Y2_norm_value
         if Y2_sum_norm_value is None:
-            Y2_sum_norm_value = Y2_max_value
+            Y2_sum_norm_value = Y2_norm_value
         Ys2_sum_norm = Ys2_sum_markers_degen/Y2_sum_norm_value
         
         omegas_perm = np.array([omegas[i] @ band_label_permutations[i] 
