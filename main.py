@@ -1,5 +1,6 @@
 """
-Example usage that generates all figures in the publication
+Example usage that generates all figures in arXiv:2412.09456
+and arXiv:2412.09470
 
 Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
