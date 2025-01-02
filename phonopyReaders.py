@@ -12,6 +12,8 @@ YCalculation: read finite E-field calculations and calculate T(omega)
 Exported functions
 ------------------
 get_modular_indices: get digits of number in a varying base
+round_plot_range: get ronded axis limits for plotting
+n_BE: Bose-Einstein distribution function
 
 Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
@@ -105,6 +107,35 @@ def round_plot_range(ymin, ymax, clamp_min=None, clamp_max=None, targets=None):
             ymax_rounded = avg_round+ceil_to((ymax-avg_round)/scale_max)\
                 *scale_max
     return ymin_rounded, ymax_rounded
+
+def n_BE(omega, temp):
+    """ Bose-Einstein distribution for phonon frequencies
+
+    Arguments
+    ---------
+    omega: np.array of real
+        Phonon cycle frequencies at which to evaluate n_BE(omega),
+        in units of THz
+    temp: real
+        Temperature at which to evaluate n_BE
+
+    Returns
+    -------
+    n_BE: np.array of real, same shape as omega
+        Bose-Einstein distribution of the given omega
+
+    Raises
+    ------
+    ValueError
+        when temp is smaller than zero
+        
+    """
+    if temp < 0:
+        raise ValueError("negative temperatures are not allowed")
+    if temp < 1e-10:
+        return (omega >= 0)-1
+    else:
+        return 1/(np.exp(47.9924307*omega/temp)-1)
 
 
 class PhonopyCalculation:
