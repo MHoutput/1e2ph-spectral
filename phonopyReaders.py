@@ -13,11 +13,13 @@ Exported functions
 ------------------
 get_modular_indices: get digits of number in a varying base
 round_plot_range: get ronded axis limits for plotting
+create_path: create a path if it doesn't already exist
 n_BE: Bose-Einstein distribution function
 
 Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.transforms
@@ -108,6 +110,29 @@ def round_plot_range(ymin, ymax, clamp_min=None, clamp_max=None, targets=None):
                 *scale_max
     return ymin_rounded, ymax_rounded
 
+def create_path(filename):
+    """ Create necessary directories to save a file 
+
+    When trying to save a file with a filename that contains
+    directories, the save fails if those directories do not exist yet.
+    This function creates the necessary directories that are present 
+    in the name of the file, if they do not exist yet.
+    
+    Arguments
+    ---------
+    filename: str
+        Name of the file to be saved, or path to be created
+
+    """
+    path_name, _ = os.path.split(filename)
+    path_norm = os.path.normpath(path_name)
+    spl_char = os.path.sep
+    dirs_to_check = [spl_char.join(path_norm.split(spl_char)[:i]) 
+                     for i in range(1, len(path_norm.split(spl_char))+1)]
+    for direc in dirs_to_check:
+        if not os.path.isdir(direc):
+            os.mkdir(direc)
+
 def n_BE(omega, temp):
     """ Bose-Einstein distribution for phonon frequencies
 
@@ -128,7 +153,7 @@ def n_BE(omega, temp):
     ------
     ValueError
         when temp is smaller than zero
-        
+
     """
     if temp < 0:
         raise ValueError("negative temperatures are not allowed")
@@ -762,7 +787,7 @@ class PhonopyCalculation:
         if frequencies_to_clean is None:
             clean_frequencies = self.get_frequencies(unit=unit)
         else:
-            clean_frequencies = frequencies_to_clean
+            clean_frequencies = 1.0*frequencies_to_clean
         if cutoff is None:
             cutoff = self.convert_units(0.1, from_unit='THz', to_unit=unit)
         if min_value is None:
@@ -1170,9 +1195,11 @@ class PhonopyCalculation:
         if save_filename is not None:
             if save_bbox_extents is None:
                 save_bbox = "tight"
+                create_path(save_filename)
                 fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
             else:
                 save_bbox = matplotlib.transforms.Bbox(save_bbox_extents)
+                create_path(save_filename)
                 fig.savefig(save_filename+".pdf", bbox_inches=save_bbox)
                 xy = save_bbox_extents[0]
                 width = save_bbox_extents[1][0]-xy[0]
@@ -1392,6 +1419,7 @@ class PhonopyBandCalculation(PhonopyCalculation):
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
+            create_path(save_filename)
             plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
 
@@ -2037,6 +2065,8 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         eigvecs: np.array of complex
             shape (:, numbands, numbands)
             Phonon eigenvectors evaluated at input q
+            First index: labels the different bands
+            Second index: labels 1x, 1y, 1z, 2x, 2y, 2z, ...
         
         
         """
@@ -2188,6 +2218,114 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
 
         return LATO_weights
     
+    def polaron_ZPR(self, band_mass, lebedev_order=21, include_nac="Gonze",
+                    temperature=0):
+        """ Calculate weak-coupling polaron ZPR and effective alpha
+        
+        Calculates the polaron zero-point renormalization (ground
+        state energy) based on the phonon frequencies and eigenvectors,
+        Born effective charge tensor, dielectric tensor, and an
+        effective electron mass. This function implements the 
+        weak-coupling formula resulting from the generalized Fröhlich
+        Hamiltonian. Also returns an effective Fröhlich alpha, as
+        defined in https://doi.org/10.1038/s41524-023-01083-8.
+
+        Arguments
+        ---------
+        band_mass: real or str
+            If real: represents the electron band mass, in units of 
+            the bare electron mass
+            If str: path to file that contains info about warped
+            band masses 
+        lebedev_order: int
+            Order of the grid used for Lebedev quadrature
+            Only used when band_mass is not a file
+            Must be an order allowed by scipy.integrate.lebedev_rule
+            (3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31,
+            35, 41, 47, 53, 59, 65, 71, 77, 83, 89, 95, 101, 107, 113,
+            119, 125, 131)
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "Gonze"
+        temperature: real
+            Temperature, in Kelvin
+            If T>0, this can be used to calculate the band gap
+            renormalization at finite temperatures, and the polaron
+            lifetime
+            Default: 0
+
+        Returns
+        -------
+        polaron_ZPR: real
+            Zero-point renormalization, in eV
+        polaron_inverse_lifetime: real
+            Inverse lifetime of the polaron, in 1/ps
+        effective_alpha: real
+            Fröhlich effective alpha, dimensionless
+        """
+        if isinstance(band_mass, str):
+            mass_info = np.loadtxt(band_mass, comments="#")
+            weights = mass_info[:,0]
+            qpoints_norm = mass_info[:,1:(1+self.num_dimensions)]
+            masses = mass_info[:,(1+self.num_dimensions):]
+            sqrt_band_masses = np.mean(np.sqrt(masses), axis=1)
+        else:
+            points, weights = scipy.integrate.lebedev_rule(lebedev_order)
+            qpoints_norm = np.transpose(points)
+            sqrt_band_masses = np.full_like(weights, np.sqrt(band_mass))
+        weights_avg = weights/(4*np.pi)
+        latvecs = self.get_lattice_vectors()
+        small_radius = 0.01/np.sqrt(np.trace(latvecs @ np.transpose(latvecs)))
+        q_points_direct = np.transpose(small_radius*
+                                       (latvecs @ np.transpose(qpoints_norm)))
+        omegas, eigvecs = \
+            self.get_freqs_eigvecs_interpolated(q_points_direct, unit="eV", 
+                convention="c-type", include_nac=include_nac, clean_value=1e-5)
+        born_charges_3x3N = np.reshape(self.born_charges.T,
+                                       (self.num_dimensions,self.numbands), 
+                                       order='F')
+        inv_mass_matrix = np.diag(1/np.sqrt(np.diag(self.get_mass_matrix())))
+        mode_polarities_2 = np.abs(np.sum(np.tensordot(eigvecs, \
+            np.transpose(born_charges_3x3N @ inv_mass_matrix), 1) \
+            *qpoints_norm[:,None,:],2))**2
+        dielectric_qs = np.sum((qpoints_norm @ self.dielectric_tensor)\
+                               *qpoints_norm,1)
+        alphas_qs_branches = 2.790068265963579*sqrt_band_masses[:,None]* \
+            mode_polarities_2/ \
+            (self.unitcell_volume*(omegas**2.5)*(dielectric_qs[:,None]**2))
+        ## For future reference, the prefactor 2.79 is calculated as follows:
+        # e = 1.602176634e-19  # Elementary charge, in Coulomb
+        # hbar = 6.62607015e-34/(2*np.pi)  #Reduced Planck constant, in J.s
+        # epsvac = 8.8541878188e-12  # Vacuum permittivity, in C^2/(J.m)
+        # mel = 9.1093837139e-31  # Electron mass, in kg
+        # amu = 1.66053906892e-27  # Atomic mass unit, in kg
+        # prefactor = ((e**2/(4*np.pi*epsvac))**2)*4*np.pi*hbar*np.sqrt(mel)/\
+        #     (np.sqrt(2)*1e-30*e**2.5*amu)  # equal to 2.79
+
+        
+        phonon_pops = n_BE(self.convert_units(omegas, from_unit="eV", 
+                                              to_unit="THz"), temperature)
+        # print(mode_polarities_2[0])
+        # print(omegas[0]*1e3)
+        # print(-weights_avg @ (alphas_qs_branches*omegas*(1+phonon_pops)))
+        # print(self.convert_units(omegas[0], from_unit="eV", to_unit="THz"))
+        polaron_ZPR = -weights_avg @ \
+            np.sum(alphas_qs_branches*omegas*(1+phonon_pops),1)
+        polaron_inverse_lifetime = (1/0.6582119569)*weights_avg @ \
+            np.sum(alphas_qs_branches*omegas*phonon_pops,1)
+        effective_alpha = weights_avg @ np.sum(alphas_qs_branches,1)
+        return polaron_ZPR, polaron_inverse_lifetime, effective_alpha
+        
+        
+
+
+    
     def plot_bands(self, path, path_labels, npoints=51, include_nac="None", 
                    unit="THz", title="Phonon dispersion", 
                    band_connections=False, band_label_permutations=None, 
@@ -2337,6 +2475,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         fig.tight_layout()    
         fig.show()
         if save_filename is not None:
+            create_path(save_filename)
             plt.savefig(save_filename+".pdf")
         return fig, ax, plot_handle
     
@@ -2540,6 +2679,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
                 
             plot_handles.append(plot_handles_this)
             if save_filename is not None and subplots is False:
+                create_path(save_filename)
                 fig_handles[index].tight_layout()
                 fig_handles[index].savefig(save_filename+"_"+\
                                            classes[index]+".pdf")
@@ -2547,6 +2687,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             fig.tight_layout()
             fig.show()
         if save_filename is not None:
+            create_path(save_filename)
             fig.savefig(save_filename+".pdf")
         return fig_handles
 
@@ -2638,10 +2779,6 @@ class YCalculation():
                                                      nac_q_direction, 
                                                      nac_G_cutoff, nac_lambda)
                       for filename in yaml_filenames]
-        for calc in self.calcs:
-            # We will take square roots and inverses of the frequencies, 
-            # so they have to be larger than zero
-            calc.clean_frequencies()
         self.zerocalc = self.calcs[np.argmin(np.abs(self.Efields))]
         self.set_take_imag(take_imag)
         self.dynmats_derE = \
@@ -2828,7 +2965,8 @@ class YCalculation():
                                                  include_nac="None")
         
         
-    def Y_interpolate(self, q, include_nac="None", freqs=None, eigvecs=None):
+    def Y_interpolate(self, q, include_nac="None", freqs=None, eigvecs=None,
+                      no_freqs=False, imaginary_cutoff=0.001):
         """ Calculate Y_{\nu_1,\nu_2}(q) at arbitrary q-points
 
         Note that include_nac only refers to the harmonic phonon
@@ -2859,6 +2997,19 @@ class YCalculation():
             Phonon eigenvectors evaluated at input q
             Default: recalculated from self.zerocalc
 
+        no_freqs: bool
+            If True, do not divide by the square roots of phonon
+            frequencies, or any prefactors. The returned Y is given
+            in the same units as dD/dE, which is THz²*Å/V.
+            Default: False
+
+        imaginary_cutoff: real
+            Any phonon branches with frequencies (in THz) lower than
+            imaginary_cutoff will have their value of Y set to zero.
+            Can be used to remove unstable phonon branches from
+            the calculations in a first approximation.
+            Default: 0.001
+
         Returns
         -------
         Y: np.array of complex
@@ -2871,26 +3022,33 @@ class YCalculation():
         outer_product = lambda A: A[...,:,None]*A[...,None,:]
         if freqs is None or eigvecs is None:
             # We divide by square roots of the phonon frequencies, so they
-            # must be positive: therefore we set clean_value = 1e-3
+            # must be positive: therefore we set clean_value
             freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
                 q, unit="THz", convention="c-type", include_nac=include_nac, 
-                clean_value=1e-3)
+                clean_value=imaginary_cutoff)
+        mask = outer_product(freqs > imaginary_cutoff)
+        
         dynmats_derE = self.dynmats_derE_interpolate(q, freq_unit="THz", 
                                                      convention="c-type", 
                                                      Efield_unit='V/Ang')
-        freqs_invsqrt = outer_product(1/np.sqrt(freqs))
-        return -0.5j * 0.004135667 * freqs_invsqrt* \
-            (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
+        if no_freqs:
+            return -1j * mask * \
+                (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
+        else:
+            freqs_invsqrt = outer_product(1/np.sqrt(freqs))
+            return -0.5j * 0.004135667 * freqs_invsqrt* mask * \
+                (eigvecs.conj() @ dynmats_derE @ np.swapaxes(eigvecs,-1,-2))
     
     def calculate_Tomega(self, q_mesh_size=8, unit="THz", include_nac="None", 
-                         sigma=None, omega=None, num_omegas=1001, moments=None, 
-                         moments_scaling_frequency=None, q_split_levels=0, 
-                         parallel_jobs=1, savedata_filename=None, 
-                         savetxt_filename=None, savefigures_filename=None, 
-                         text_sizes=(13, 15, 16), title=None, colors=None):
+                         sigma=None, omega=None, num_omegas=1001, 
+                         imaginary_cutoff=0.001,
+                         moments=np.array([-0.5, -1.0, -1.5]), 
+                         moments_scaling_frequency=None, temperature=0.,
+                         q_split_levels=0, parallel_jobs=1, 
+                         savedata_filename=None):
         """ Calculate and plot T(omega) with the smearing method
 
-        This functional offers functionality to calculate the 
+        This function offers functionality to calculate the 
         LATO-resolved 1-electron-2-phonon spectral function,
         write the results to a file or save them in a .npz file,
         and plotting the result in a graph.
@@ -2927,15 +3085,23 @@ class YCalculation():
         num_omegas: int
             Number of frequencies if no array is specified for omega
             Default: 1001
+        imaginary_cutoff: real
+            Any phonon branches with frequencies (in THz) lower than
+            imaginary_cutoff will have their value of Y set to zero.
+            Can be used to remove unstable phonon branches from
+            the calculations in a first approximation.
+            Default: 0.001
         moments: np.array of real
             shape (:, )
             Exponents for the moments of T(omega) to be calculated
-            Most interesting case: np.array([-0.5, -1.0, -1.5])
-            Default: None, moments are not calculated
+            Default: np.array([-0.5, -1.0, -1.5])
         moments_scaling_frequency: real
             Scaling frequency to make the moments dimensionless
             Stored values are T_n/(moments_scaling_frequency)^(n+1)
             Default: highest phonon frequency at Gamma
+        temperature: real
+            Temperature at which to calculate Tomega, in Kelvin
+            Default: 0 K
         q_split_levels: int, between 0 and 3
             Controls how many of the fine q-mesh points are generated
             at once. In general, only one (3 - q_split_levels)-
@@ -2968,45 +3134,6 @@ class YCalculation():
                 - Tmoments_AO, with longitudinal/transverse distinction
                 - Tmoments_LATO, with full LATO distinction
             Default: None, the calculation data is not saved
-        savetxt_filename: str
-            Filename to store the resulting data in a .txt file
-            It will contain a column with the frequency in the input
-            units, a column with the total T(omega), and 10 columns
-            with the separate LATO contributions
-            The filename should not include the extension ".txt"
-            Default: None, the calculation result is not stored
-        save_filename: str
-            Save all figures with the given common filename, 
-            in .pdf format
-            The filename should not include the extension ".pdf"
-            Default: None, figure is not saved to a file
-        text_sizes: tuple of 3 ints
-            Font sizes for small, medium and large text in the figure
-                -Small text: axis ticks
-                -Medium text: axis labels
-                -Large text: title
-            Default: (13, 15, 16)
-        title: str
-            Title for the figure
-            Default: "1-electron-2-phonon spectral function"
-        colors: List of 10 colors
-            Colors to be used for the stackplot of LATO contributions
-            Default: 
-            [
-                (0.7, 0.4, 0.4),
-                (0.7, 0.7, 1.0),
-                (0.5, 0.5, 0.5),
-                (0.9, 0.6, 0.9),
-                (0.4, 0.6, 0.4),
-                (0.9, 0.9, 0.5),
-                (0.4, 0.6, 0.7),
-                (1.0, 0.6, 0.6),
-                (0.4, 0.4, 0.7),
-                (0.5, 1.0, 0.5)
-            ]
-
-
-        
 
         Returns
         -------
@@ -3042,7 +3169,7 @@ class YCalculation():
             # moments scaling frequency by default
             moments_scaling_frequency = \
                 np.max(self.zerocalc.get_freqs_eigvecs_interpolated(\
-                    np.array([0.0,0.0,0.0]), include_nac="Gonze")[0])
+                    np.array([0.0,0.0,0.0]), include_nac="Gonze", unit=unit)[0])
         if omega is None:
             # Set the default range of omega if none is provided
             rounding_scale = 10**np.floor(np.log10(abs(omega_max)))
@@ -3081,8 +3208,8 @@ class YCalculation():
         if q_split_levels == 0:
             # We store all q-points in one big array and pass them all at once
             qs = self.zerocalc.get_dense_qmesh(q_mesh_size_array)
-            Tomega_LATO = self.Tomega_LATO_smearing(omega, qs, sigma, 
-                                                    include_nac=include_nac)
+            Tomega_LATO = self.Tomega_LATO_smearing(omega, qs, sigma,
+                                    temperature, include_nac=include_nac)
         else:
             # We generate the q-points in smaller arrays, with q_split_levels 
             # indices fixed, and then add everything up.
@@ -3099,14 +3226,17 @@ class YCalculation():
                         omega, self.zerocalc.get_dense_qmesh(\
                             q_mesh_size_array[:-q_split_levels], 
                             fixed_indices=q_fixed), 
-                        sigma, include_nac=include_nac) 
+                        sigma, temperature, include_nac=include_nac,
+                        imaginary_cutoff=imaginary_cutoff) 
                     for q_fixed in qs_fixed)
             else:
                 T_omega_terms = [self.Tomega_LATO_smearing(omega, 
                         self.zerocalc.get_dense_qmesh(\
                             q_mesh_size_array[:-q_split_levels], 
                             fixed_indices=q_fixed), 
-                        sigma, include_nac=include_nac) for q_fixed in qs_fixed]
+                        sigma, temperature, include_nac=include_nac,
+                        imaginary_cutoff=imaginary_cutoff) 
+                    for q_fixed in qs_fixed]
             Tomega_LATO = sum(T_omega_terms) / len(qs_fixed)
         
         # Get all the different resolutions from Tomega_LATO
@@ -3125,21 +3255,18 @@ class YCalculation():
                     sum_where[np.ix_(sum_indices_x, sum_indices_y)] = True
                     Tomega_current[:, index2, index3] = \
                         np.sum(Tomega_LATO, axis=(1,2), where=sum_where)
-            if moments is not None:
-                Tmoments_current = np.zeros((len(moments), len(partials), 
-                                             len(partials)))
-                nonzero_indices = np.abs(omega_input_units)>1e-10
-                nonzero_omegas = omega_input_units[nonzero_indices]
-                for index, n in enumerate(moments):
-                    omega_power = np.zeros_like(omega_input_units)
-                    omega_power[nonzero_indices] = np.power(nonzero_omegas, n)
-                    Tmoments_current[index, ...] = \
-                        np.power(moments_scaling_frequency, -(n+1)) * \
-                        scipy.integrate.simpson(\
-                            Tomega_current*omega_power[:,None,None],
-                            x=omega_input_units, axis=0)
-            else:
-                Tmoments_current = []
+            Tmoments_current = np.zeros((len(moments), len(partials), 
+                                            len(partials)))
+            nonzero_indices = np.abs(omega_input_units)>1e-10
+            nonzero_omegas = omega_input_units[nonzero_indices]
+            for index, n in enumerate(moments):
+                omega_power = np.zeros_like(omega_input_units)
+                omega_power[nonzero_indices] = np.power(nonzero_omegas, n)
+                Tmoments_current[index, ...] = \
+                    np.power(moments_scaling_frequency, -(n+1)) * \
+                    scipy.integrate.simpson(\
+                        Tomega_current*omega_power[:,None,None],
+                        x=omega_input_units, axis=0)
             Tomega_resolutions.append(Tomega_current)
             Tmoments_resolutions.append(Tmoments_current)
         # Name the resolutions and save them if necessary
@@ -3150,93 +3277,34 @@ class YCalculation():
         Tmoments_AO = Tmoments_resolutions[2]
         Tomega = Tomega_resolutions[3][:,0,0]
         Tmoments = Tmoments_resolutions[3][:,0,0]
+
+        results_dict = {
+            "q_mesh_size": q_mesh_size,
+            "unit": unit,
+            "include_nac": include_nac,
+            "sigma": sigma,
+            "moments": moments,
+            "moments_scaling_frequency": moments_scaling_frequency,
+            "omega": omega_input_units,
+            "omega_max": omega_max,
+            "Tomega_LATO": Tomega_LATO,
+            "Tomega_LT": Tomega_LT,
+            "Tomega_AO": Tomega_AO,
+            "Tomega": Tomega,
+            "Tmoments_LATO": Tmoments_LATO,
+            "Tmoments_LT": Tmoments_LT,
+            "Tmoments_AO": Tmoments_AO,
+            "Tmoments": Tmoments,
+            "temperature": temperature
+        }
+        results = TomegaResults(results_dict)
         if savedata_filename is not None:
-            np.savez(savedata_filename, q_mesh_size=q_mesh_size, unit=unit, 
-                     include_nac=include_nac, sigma=sigma, moments=moments, 
-                     moments_scaling_frequency=moments_scaling_frequency, 
-                     omega=omega_input_units, omega_max=omega_max, 
-                     Tomega_LATO=Tomega_LATO, Tomega_LT=Tomega_LT, 
-                     Tomega_AO=Tomega_AO, Tomega=Tomega, 
-                     Tmoments_LATO=Tmoments_LATO, Tmoments_LT=Tmoments_LT, 
-                     Tmoments_AO=Tmoments_AO, Tmoments=Tmoments)
-            
-        # Plot figures of the different resolutions:
-        labels_list = [ ["TA", "LA", "TO", "LO"], ["T", "L"], ["A", "O"] ]
-        label_names = ["LATO", "LT", "AO"]
-        if colors is None:
-            colors = [
-                (0.7, 0.4, 0.4),
-                (0.7, 0.7, 1.0),
-                (0.5, 0.5, 0.5),
-                (0.9, 0.6, 0.9),
-                (0.4, 0.6, 0.4),
-                (0.9, 0.9, 0.5),
-                (0.4, 0.6, 0.7),
-                (1.0, 0.6, 0.6),
-                (0.4, 0.4, 0.7),
-                (0.5, 1.0, 0.5)
-            ]
-        for labels, name,  partials, Tomega_res \
-            in zip(labels_list, label_names, partials_list[:-1], 
-                   Tomega_resolutions):
-            num_partials = len(partials)
-            num_contributions = int(num_partials*(num_partials+1)/2)
-            T_contributions = np.zeros((num_contributions, len(omega)))
-            contribution_labels = []
-            count = 0
-            for index1 in range(0, num_partials):
-                T_contributions[count] = Tomega_res[:, index1, index1]
-                contribution_labels.append(labels[index1]+"-"+labels[index1])
-                count += 1
-                for index2 in range(index1+1, num_partials):
-                    T_contributions[count] = Tomega_res[:, index1, index2] + \
-                        Tomega_res[:, index2, index1]
-                    contribution_labels.append(labels[index1]+"-"+\
-                                               labels[index2])
-                    count += 1
-            
-            if name=="LATO" and savetxt_filename is not None:
-                full_data_array = \
-                    np.transpose(np.append(np.array([omega_input_units,Tomega]), 
-                                           T_contributions, axis=0))
-                np.savetxt(savetxt_filename+".txt", full_data_array,
-                        header="  Frequency ("+unit+")"+" "*(9-len(unit))+\
-                                "    T(omega), total      "+\
-                                "    T(omega), TA-TA      "+\
-                                "    T(omega), TA-LA      "+\
-                                "    T(omega), TA-TO      "+\
-                                "    T(omega), TA-LO      "+\
-                                "    T(omega), LA-LA      "+\
-                                "    T(omega), LA-TO      "+\
-                                "    T(omega), LA-LO      "+\
-                                "    T(omega), TO-TO      "+\
-                                "    T(omega), TO-LO      "+\
-                                "    T(omega), LO-LO      ")
-            
-            fig, ax = plt.subplots()
-            plot_handles = ax.stackplot(omega_input_units, T_contributions, 
-                                        colors=colors, 
-                                        labels=contribution_labels)
-            plot_handle_total, = ax.plot(omega_input_units, Tomega, 
-                                         color="black", label="Total")
-            plot_handles.append(plot_handle_total)
-            
-            if title is None:
-                title = "1-electron-2-phonon spectral function"
-            ax.set_title(title, fontsize=text_sizes[2])
-            ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
-            ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
-            ax.legend(handles=plot_handles[::-1], fontsize=text_sizes[0])
-            ax.set_xlim(omega_min_scale, omega_max_scale)
-            ax.tick_params(axis='both', labelsize=text_sizes[0])
-            fig.tight_layout()
-            fig.show()
-            if savefigures_filename is not None:
-                fig.savefig(savefigures_filename+"_"+name+".pdf")
-            
-        return omega_input_units, Tomega, Tmoments, fig, ax, plot_handles
+            results.save_npz(savedata_filename)
+
+        return results
     
-    def Tomega_LATO_smearing(self, omegas, qs, sigma, include_nac="None"):
+    def Tomega_LATO_smearing(self, omegas, qs, sigma, temperature,
+                             include_nac="None", imaginary_cutoff=0.001):
         """ Compute LATO-resolved T(omega) with the smearing method
         
         Uses the trapezoid rule for Brillouin zone integration
@@ -3254,8 +3322,16 @@ class YCalculation():
             Dense mesh of q-points for the Brillouin zone integration
         sigma: real
             Delta function smearing width, in THz
+        temperature: real
+            Temperature, in Kelvin
         include_nac: str
             Mode of NAC correction, "None", "Gonze", or "Wang"
+        imaginary_cutoff: real
+            Any phonon branches with frequencies (in THz) lower than
+            imaginary_cutoff will have their value of Y set to zero.
+            Can be used to remove unstable phonon branches from
+            the calculations in a first approximation.
+            Default: 0.001
 
         Returns
         -------
@@ -3274,19 +3350,34 @@ class YCalculation():
         # Calculate the interpolated phonon frequencies
         # Note: we clean the acoustic frequencies because we divide by them
         phonon_freqs, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
-            qs, unit="THz", include_nac=include_nac, clean_value=1e-3, 
-            convention="c-type")
+            qs, unit="THz", include_nac=include_nac, convention="c-type",
+            clean_value=imaginary_cutoff)
         # Calculate the LATO weights for each band:
         LATO_weights = self.zerocalc.get_LATO_weights(qs, eigenvectors=eigvecs)
-        # Define an array that represents omega_{q, nu1} + omega_{q, nu2}
+        # Define array that represents n(omega_{q, nu})
+        phonon_occs = n_BE(phonon_freqs, temperature)
+        # Define array that represents omega_{q, nu1} + omega_{q, nu2}
         omega_sum = phonon_freqs.reshape((-1,numbands,1))\
               + phonon_freqs.reshape((-1,1,numbands))
-        # Define an array that represents |Y_{nu1, nu2}(q)|^2
+        # Define array that represents 1 + n(omega_{q, nu1}) + n(omega_{q, nu2})
+        omega_nB_sum = 1. + phonon_occs.reshape((-1,numbands,1))\
+              + phonon_occs.reshape((-1,1,numbands))
+        # Define array that represents |omega_{q, nu1} - omega_{q, nu2}|
+        omega_diff = np.abs(phonon_freqs.reshape((-1,numbands,1))\
+              - phonon_freqs.reshape((-1,1,numbands)))
+        # Define array that represents |n(omega_{q, nu1}) - n(omega_{q, nu2})|
+        omega_nB_diff = np.abs(phonon_occs.reshape((-1,numbands,1))\
+              - phonon_occs.reshape((-1,1,numbands)))
+        # Define array that represents |Y_{nu1, nu2}(q)|^2
         Y2s = np.abs(self.Y_interpolate(qs, include_nac=include_nac, 
-                                        freqs=phonon_freqs, eigvecs=eigvecs))**2
+                                        freqs=phonon_freqs, eigvecs=eigvecs,
+                                        imaginary_cutoff=imaginary_cutoff))**2
         # Define T(omega) as calculated with the trapezoid rule:
         T_func = lambda x : eV_to_dimensionless * \
-            np.mean(np.conjugate(LATO_weights)@(Y2s*delta_smeared(x-omega_sum))\
+            np.mean(np.conjugate(LATO_weights)@(Y2s*(
+                omega_nB_sum*delta_smeared(x-omega_sum) \
+                + omega_nB_diff*delta_smeared(x-omega_diff)
+                ))\
                      @ np.swapaxes(LATO_weights, -1, -2), axis=0)
         #Iterate T_func over all elements in omega:
         T_omega = np.empty((len(omegas), LATO_weights.shape[1], 
@@ -3301,7 +3392,8 @@ class YCalculation():
               Y2_sum_norm_value=None, band_label_permutations=None,
               save_filename=None, plot_style=None, plot_highlight_style=None, 
               marker_style=None, subplots=None, shareaxes=False, figsize=None, 
-              text_sizes=(13, 15, 16), plot_range=None):
+              text_sizes=(13, 15, 16), plot_range=None, no_freqs=False,
+              imaginary_cutoff=0.001):
         
         """ Plot |Y_{nu_1,nu_2}(q)|^2 over the phonon band structure
 
@@ -3399,6 +3491,16 @@ class YCalculation():
             Minimum and maximum limits of the figure y-axis
             Default: rounded range of num_omegas points between the
             minimum and maximum phonon frequency
+        no_freqs: bool
+            If True, do not divide by the square roots of phonon
+            frequencies, or any prefactors.
+            Default: False
+        imaginary_cutoff: real
+            Any phonon branches with frequencies (in THz) lower than
+            imaginary_cutoff will have their value of Y set to zero.
+            Can be used to remove unstable phonon branches from
+            the calculations in a first approximation.
+            Default: 0.001
         
         Returns
         -------
@@ -3438,8 +3540,9 @@ class YCalculation():
         qs, distances, xaxis_labels, jump_indices = \
             self.zerocalc.parse_path(path, path_labels, npoints=npoints)
         omegas, eigvecs = self.zerocalc.get_freqs_eigvecs_interpolated(\
-            qs, unit=unit, convention="c-type", include_nac=include_nac, 
-            clean_value=1e-3)
+            qs, unit=unit, convention="c-type", include_nac=include_nac)
+        omegas_calc = self.zerocalc.get_clean_frequencies(
+            frequencies_to_clean = omegas, min_value=imaginary_cutoff)
         if band_label_permutations is None:
             band_label_permutations = self.zerocalc.get_label_permutations(\
                 qs, eigvecs, jump_indices)
@@ -3447,18 +3550,19 @@ class YCalculation():
         distances_markers = np.linspace(np.min(distances), np.max(distances), 
                                         num_markers)
         distances_array = np.tile(distances_markers, (number_of_bands,1)).T
-        qs_markers = scipy.interpolate.griddata(distances, qs, 
-                                                distances_markers)
+        # qs_markers = scipy.interpolate.griddata(distances, qs, 
+        #                                         distances_markers)
         perms_markers = scipy.interpolate.griddata(\
             distances, band_label_permutations, distances_markers, 
             method='nearest')
         
-        omegas_markers, _ = self.zerocalc.get_freqs_eigvecs_interpolated(\
-            qs_markers, unit=unit, convention="c-type", include_nac=include_nac,
-            clean_value=1e-3)
+        # omegas_markers, _ = self.zerocalc.get_freqs_eigvecs_interpolated(\
+        #     qs_markers, unit=unit, convention="c-type", include_nac=include_nac,
+        #     clean_value=imaginary_cutoff)
         
-        Ys = self.Y_interpolate(qs, include_nac=include_nac, freqs=omegas, 
-                                eigvecs=eigvecs)
+        Ys = self.Y_interpolate(qs, include_nac=include_nac, freqs=omegas_calc, 
+                                eigvecs=eigvecs, no_freqs=no_freqs,
+                                imaginary_cutoff=imaginary_cutoff)
         Ys2 = np.real(Ys*Ys.conj())
         Ys2_sum = np.sum(Ys2, axis=1)
         omegas_markers = scipy.interpolate.griddata(distances, omegas, 
@@ -3532,8 +3636,8 @@ class YCalculation():
         if plot_range is None:
             omega_min = np.min(omegas)
             omega_max = np.max(omegas)
-            if omega_min < -self.convert_units(0.1, from_unit="THz", 
-                                               to_unit=unit):
+            if omega_min < -self.zerocalc.convert_units(0.1, from_unit="THz", 
+                                                        to_unit=unit):
                 # Include the unstable phonon modes in the plot
                 omega_min_scale, omega_max_scale = \
                     round_plot_range(omega_min, omega_max)
@@ -3563,7 +3667,11 @@ class YCalculation():
             xaxis_ticks = np.append(distances[0::npoints], distances[-1])
             
             if set_title1:
-                title1 = "$|Y_{\\nu "+str(index)+",z}(\\mathbf{q})|^2$"
+                if no_freqs:
+                    title1 = "$|\\tilde{Y}_{\\nu "+str(index)+\
+                        ",z}(\\mathbf{q})|^2$"
+                else:
+                    title1 = "$|Y_{\\nu "+str(index)+",z}(\\mathbf{q})|^2$"
             ax.set_title(title1, size=text_sizes[2])
             ax.set_ylabel('Phonon frequencies (THz)', fontsize=text_sizes[1])
             ax.set_xticks(xaxis_ticks, xaxis_labels)
@@ -3586,12 +3694,14 @@ class YCalculation():
             
             plot_handles.append(plot_handles_this)
             if save_filename is not None and subplots is None:
+                create_path(save_filename)
                 fig_handles[index].tight_layout()
                 fig_handles[index].savefig(save_filename+"_"+str(index)+".pdf")
         for fig in fig_handles:
-            fig_handles[index].tight_layout()
+            fig.tight_layout()
             fig.show()
         if save_filename is not None and subplots is not None:
+            create_path(save_filename)
             fig_handles[0].savefig(save_filename+".pdf")
             
         fig, ax = plt.subplots()
@@ -3624,8 +3734,450 @@ class YCalculation():
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
+            create_path(save_filename)
             fig.savefig(save_filename+"_summed.pdf")
         
         return Y2_max_value, Y2_sum_max_value, fig_handles, ax_handles, \
             plot_handles
+    
+class TomegaResults():
+    """ Store and plot results of a Tomega calculation """
+
+    def __init__(self, results_dict):
+        """ TomegaResults(results_dict)
+
+        Arguments
+        ---------
+        results_dict: dict or string
+            If dict: Dictionary containing the results of a calculation
+            If string: path to a .npz file generated
+                by YCalculation.calculate_Tomega()
+        """
+        if isinstance(results_dict, str):
+            self.results_dict = dict(np.load(results_dict))
+        else:
+            self.results_dict = results_dict
+        self.q_mesh_size = int(self.results_dict["q_mesh_size"])
+        self.unit = str(self.results_dict["unit"])
+        self.include_nac = str(self.results_dict["include_nac"])
+        self.sigma = float(self.results_dict["sigma"])
+        self.moments = np.array(self.results_dict["moments"])
+        self.moments_scaling_frequency = \
+            float(self.results_dict["moments_scaling_frequency"])
+        self.omega = np.array(self.results_dict["omega"])
+        self.omega_max = float(self.results_dict["omega_max"])
+        self.Tomega_LATO = np.array(self.results_dict["Tomega_LATO"])
+        self.Tomega_LT = np.array(self.results_dict["Tomega_LT"])
+        self.Tomega_AO = np.array(self.results_dict["Tomega_AO"])
+        self.Tomega = np.array(self.results_dict["Tomega"])
+        self.Tmoments_LATO = np.array(self.results_dict["Tmoments_LATO"])
+        self.Tmoments_LT = np.array(self.results_dict["Tmoments_LT"])
+        self.Tmoments_AO = np.array(self.results_dict["Tmoments_AO"])
+        self.Tmoments = np.array(self.results_dict["Tmoments"])
+        self.temperature = float(self.results_dict["temperature"])
+    
+    def to_dict(self):
+        """ Return results data as a dict """
+        return self.results_dict
+    
+    def save_npz(self, save_filename):
+        """ Save all data in this object to a .npz file
+
+        Arguments
+        ---------
+        save_filename: string
+            Name of the file to save to
+        """
+        create_path(save_filename)
+        np.savez(save_filename, q_mesh_size=self.q_mesh_size, unit=self.unit, 
+                 include_nac=self.include_nac, sigma=self.sigma, 
+                 moments=self.moments, 
+                 moments_scaling_frequency=self.moments_scaling_frequency, 
+                 omega=self.omega, omega_max=self.omega_max, 
+                 Tomega_LATO=self.Tomega_LATO, Tomega_LT=self.Tomega_LT, 
+                 Tomega_AO=self.Tomega_AO, Tomega=self.Tomega, 
+                 Tmoments_LATO=self.Tmoments_LATO, Tmoments_LT=self.Tmoments_LT,
+                 Tmoments_AO=self.Tmoments_AO, Tmoments=self.Tmoments,
+                 temperature=self.temperature)
+    
+    def save_txt(self, save_filename, save_moments_filename=None,
+                 resolution="LATO"):
+        """ Save T(omega) and its moments to a .txt file
+
+        This function saves the values of T(omega) and its moments
+        to a text file. If a resolution is selected, also saves the
+        separate longitudinal, acoustic, transverse, and/or optical
+        contributions to the text file.
+
+        Moments are made dimensionless with moments_scaling_frequency,
+        which is also saved to the text file.
+
+        Arguments
+        ---------
+        save_filename: string
+            Name of the file to save T(omega) to
+        save_moments_filename: string
+            Name of the file to save the moments T_n to
+            Default: None, moments are not saved to a file
+        resolution: string
+            Save the resolved contributions to T(omega) and its moments
+            Choose from the following options:
+            - "LATO": resolve longitudinal, acoustic, transverse, and
+              optical
+            - "LT": resolve longitudinal and transverse
+            - "AO": resolve acoustic and optical
+            - "none": only save the total contributions
+            Default: "LATO"
+        
+        """
+        match resolution:
+            case "LATO":
+                Tomega_resolutions = self.Tomega_LATO
+                Tmoments_resolutions = self.Tmoments_LATO
+                num_partials = len(Tomega_resolutions[0])
+                labels = ["TA", "LA", "TO", "LO"]
+            case "LT":
+                Tomega_resolutions = self.Tomega_LT
+                Tmoments_resolutions = self.Tmoments_LT
+                num_partials = len(Tomega_resolutions[0])
+                labels = ["T", "L"]
+            case "AO":
+                Tomega_resolutions = self.Tomega_AO
+                Tmoments_resolutions = self.Tmoments_AO
+                num_partials = len(Tomega_resolutions[0])
+                labels = ["A", "O"]
+            case "none":
+                Tomega_resolutions = self.Tomega
+                Tmoments_resolutions = self.Tmoments
+                num_partials = 1
+                labels = ["Tomega"]
+            case _:
+                warn_string = "resolution="+str(resolution)+\
+                    "was not recognized."+\
+                    "Expected 'LATO', 'LT', 'AO', or 'none'."+\
+                    "A file with LATO resolution was saved."
+                warnings.warn(warn_string)
+                Tomega_resolutions = self.Tomega_LATO
+                Tmoments_resolutions = self.Tmoments_LATO
+                labels = ["TA", "LA", "TO", "LO"]
+        if resolution=='none':
+            full_data_array = \
+                np.transpose(np.array([self.omega,self.Tomega]))
+            header = "  Frequency ("+self.unit+")"+" "*(9-len(self.unit))+\
+                     "    T(omega), total      "
+            moments_data_array = \
+                np.transpose(np.array([self.moments,self.Tmoments]))
+            header_moments = "Moments scaling frequency: "+\
+                str(self.moments_scaling_frequency)+" "+self.unit+"\n"\
+                "       Moment n                T_n, total       "
+        else:
+            num_contributions = int(num_partials*(num_partials+1)/2)
+            T_contributions = np.zeros((num_contributions, len(self.omega)))
+            T_moments_contributions = np.zeros((num_contributions, 
+                                                len(self.moments)))
+            contribution_labels = ["total"]
+            count = 0
+            for index1 in range(0, num_partials):
+                T_contributions[count] = Tomega_resolutions[:, index1, index1]
+                T_moments_contributions[count] = \
+                    Tmoments_resolutions[:, index1, index1]
+                contribution_labels.append(labels[index1]+"-"+labels[index1])
+                count += 1
+                for index2 in range(index1+1, num_partials):
+                    T_contributions[count] = \
+                        Tomega_resolutions[:, index1, index2]+\
+                        Tomega_resolutions[:, index2, index1]
+                    T_moments_contributions[count] = \
+                        Tmoments_resolutions[:, index1, index2] \
+                        + Tmoments_resolutions[:, index2, index1]
+                    contribution_labels.append(labels[index1]+"-"+\
+                                            labels[index2])
+                    count += 1
+            full_data_array = \
+                np.transpose(np.append(np.array([self.omega,self.Tomega]), 
+                                    T_contributions, axis=0))
+            header = "  Frequency ("+self.unit+")"+" "*(9-len(self.unit))
+            for name in contribution_labels:
+                header += "    T(omega), "+name+" "*(11-len(name))
+            moments_data_array = \
+                np.transpose(np.append(np.array([self.moments,self.Tmoments]), 
+                                    T_moments_contributions, axis=0))
+            header_moments = "Moments scaling frequency: "+\
+                str(self.moments_scaling_frequency)+" "+self.unit+"\n"\
+                "       Moment n         "
+            for name in contribution_labels:
+                header_moments += "       T_n, "+name+" "*(13-len(name))
+        create_path(save_filename)
+        np.savetxt(save_filename+".txt", full_data_array,
+                header=header)
+        if save_moments_filename is not None:
+            create_path(save_moments_filename)
+            np.savetxt(save_moments_filename+".txt", moments_data_array,
+                    header=header_moments)
+
+    def plot(self, resolution="LATO", save_filename=None, inset_moment=-0.5, 
+             inset_bounding_box=[0.79,0.15,0.1,0.8], text_sizes=(13, 15, 16),
+             title=None, hatchplot_style=None): 
+        """ Plot T(omega) and its LATO components
+
+        Arguments
+        ---------
+        resolution: str
+            Choose which components of T(omega) should be resolved
+            on the figure
+            Choose from the following options:
+            - "LATO": resolve longitudinal, acoustic, transverse, and
+              optical
+            - "LT": resolve longitudinal and transverse
+            - "AO": resolve acoustic and optical
+            Default: "LATO"
+        save_filename: str
+            Save all figures with the given common filename, 
+            in .pdf format
+            The filename should not include the extension ".pdf"
+            Default: None, figure is not saved to a file
+        inset_moment: real
+            Moment used to calculate data for the inset figure
+            Note: moments must contain the value of inset_moment in
+            order to plot the inset figure, otherwise a warning is 
+            raised and a legend is plotted instead 
+            Default: -0.5
+        inset_bounding_box: List of 4 ints, or None
+            Bounding box of the inset figure. If equal to None, plot
+            a legend instead instead of an inset figure.
+            Default: [0.79, 0.15, 0.1, 0.8]
+        text_sizes: tuple of 3 ints
+            Font sizes for small, medium and large text in the figure
+                -Small text: axis ticks
+                -Medium text: axis labels
+                -Large text: title
+            Default: (13, 15, 16)
+        title: str
+            Title for the figure
+            Default: "1-electron-2-phonon spectral function"
+        hatchplot_styles: List of 10 dicts
+            Hatchings and colors to be used for the stackplot of LATO
+            contributions. Each dict has 4 keys:
+                - hatch: hatching style from Matplotlib
+                - color1: background color for the hatching
+                - color2: color of the hatching pattern
+                - label_shift: optional, shift for the label in the
+                  inset figure. Default: 0, no shift
+            
+            Default:
+            - For resolution="LATO":
+                hatchplot_styles = [
+                    dict(color1=colorTA, color2=colorTA, hatch='//'),
+                    dict(color1=colorTA, color2=colorLA, hatch='//'),
+                    dict(color1=colorTA, color2=colorTO, hatch='\\\\'),
+                    dict(color1=colorTA, color2=colorLO, hatch='//'),
+                    dict(color1=colorLA, color2=colorLA, hatch='//'),
+                    dict(color1=colorLA, color2=colorTO, hatch='//'),
+                    dict(color1=colorLA, color2=colorLO, hatch='\\\\'),
+                    dict(color1=colorTO, color2=colorTO, hatch='//'),
+                    dict(color1=colorTO, color2=colorLO, hatch='//'),
+                    dict(color1=colorLO, color2=colorLO, hatch='//'),
+                ]
+            where colorTA = (0.8, 0.5, 0.5), colorLA = (0.4, 0.7, 0.4),
+            colorTO = (0.4, 0.4, 0.8), and colorLO = (0.3, 0.3, 0.3)
+            - For resolution="LT":
+                hatchplot_style = [
+                    dict(color1=colorT, color2=colorT, hatch='//'),
+                    dict(color1=colorT, color2=colorL, hatch='//'),
+                    dict(color1=colorL, color2=colorL, hatch='//'),
+                ]
+            where colorT = (0.8, 0.5, 0.5) and colorL = (0.4, 0.7, 0.4)
+            - For resolution="AO":
+                hatchplot_style = [
+                    dict(color1=colorA, color2=colorA, hatch='//'),
+                    dict(color1=colorA, color2=colorO, hatch='//'),
+                    dict(color1=colorO, color2=colorO, hatch='//'),
+                ]
+            where colorA = (0.8, 0.5, 0.5) and colorO = (0.4, 0.4, 0.8)
+
+        Returns
+        -------
+        fig: figure handle
+        ax: axis handle
+        plot_handle: handle to the plot data
+
+        """
+        
+        match resolution:
+            case "LATO":
+                Tomega_resolutions = self.Tomega_LATO
+                Tmoments_resolutions = self.Tmoments_LATO
+                labels = ["TA", "LA", "TO", "LO"]
+                if hatchplot_style is None:
+                    colorTA = (0.8, 0.5, 0.5)
+                    colorLA = (0.4, 0.7, 0.4)
+                    colorTO = (0.4, 0.4, 0.8)
+                    colorLO = (0.3, 0.3, 0.3)
+                    hatchplot_style = [
+                        dict(color1=colorTA, color2=colorTA, hatch='//'),
+                        dict(color1=colorTA, color2=colorLA, hatch='//'),
+                        dict(color1=colorTA, color2=colorTO, hatch='\\\\'),
+                        dict(color1=colorTA, color2=colorLO, hatch='//'),
+                        dict(color1=colorLA, color2=colorLA, hatch='//'),
+                        dict(color1=colorLA, color2=colorTO, hatch='//'),
+                        dict(color1=colorLA, color2=colorLO, hatch='\\\\'),
+                        dict(color1=colorTO, color2=colorTO, hatch='//'),
+                        dict(color1=colorTO, color2=colorLO, hatch='//'),
+                        dict(color1=colorLO, color2=colorLO, hatch='//'),
+                    ]
+            case "LT":
+                Tomega_resolutions = self.Tomega_LT
+                Tmoments_resolutions = self.Tmoments_LT
+                labels = ["T", "L"]
+                if hatchplot_style is None:
+                    colorT = (0.8, 0.5, 0.5)
+                    colorL = (0.4, 0.7, 0.4)
+                    hatchplot_style = [
+                        dict(color1=colorT, color2=colorT, hatch='//'),
+                        dict(color1=colorT, color2=colorL, hatch='//'),
+                        dict(color1=colorL, color2=colorL, hatch='//'),
+                    ]
+            case "AO":
+                Tomega_resolutions = self.Tomega_AO
+                Tmoments_resolutions = self.Tmoments_AO
+                labels = ["A", "O"]
+                if hatchplot_style is None:
+                    colorA = (0.8, 0.5, 0.5)
+                    colorO = (0.4, 0.4, 0.8)
+                    hatchplot_style = [
+                        dict(color1=colorA, color2=colorA, hatch='//'),
+                        dict(color1=colorA, color2=colorO, hatch='//'),
+                        dict(color1=colorO, color2=colorO, hatch='//'),
+                    ]
+            case _:
+                warn_string = "resolution="+str(resolution)+\
+                    "was not recognized. Expected 'LATO', 'LT', or 'AO'."+\
+                    "A figure with LATO resolution was made."
+                warnings.warn(warn_string)
+                Tomega_resolutions = self.Tomega_LATO
+                Tmoments_resolutions = self.Tmoments_LATO
+                labels = ["TA", "LA", "TO", "LO"]
+                if hatchplot_style is None:
+                    colorTA = (0.8, 0.5, 0.5)
+                    colorLA = (0.4, 0.7, 0.4)
+                    colorTO = (0.4, 0.4, 0.8)
+                    colorLO = (0.3, 0.3, 0.3)
+                    hatchplot_style = [
+                        dict(color1=colorTA, color2=colorTA, hatch='//'),
+                        dict(color1=colorTA, color2=colorLA, hatch='//'),
+                        dict(color1=colorTA, color2=colorTO, hatch='\\\\'),
+                        dict(color1=colorTA, color2=colorLO, hatch='//'),
+                        dict(color1=colorLA, color2=colorLA, hatch='//'),
+                        dict(color1=colorLA, color2=colorTO, hatch='//'),
+                        dict(color1=colorLA, color2=colorLO, hatch='\\\\'),
+                        dict(color1=colorTO, color2=colorTO, hatch='//'),
+                        dict(color1=colorTO, color2=colorLO, hatch='//'),
+                        dict(color1=colorLO, color2=colorLO, hatch='//'),
+                    ]
+
+        # Find the first index where moments = inset_moment
+        moments_inset_indices = \
+            np.where(np.abs(self.moments-inset_moment)<=1e-10)[0]
+        if len(moments_inset_indices) == 0:
+            warn_string = "inset_moment was not found in moments."+\
+             "A legend was plotted instead of the inset figure."
+            warnings.warn(warn_string)
+            inset_bounding_box = None
+        else:
+            moments_inset_index = moments_inset_indices[0]
+        
+        num_partials = len(Tomega_resolutions[0])
+        num_contributions = int(num_partials*(num_partials+1)/2)
+        T_contributions = np.zeros((num_contributions, len(self.omega)))
+        T_moments_contributions = np.zeros((num_contributions, 
+                                            len(self.moments)))
+        contribution_labels = []
+        count = 0
+        for index1 in range(0, num_partials):
+            T_contributions[count] = Tomega_resolutions[:, index1, index1]
+            T_moments_contributions[count] = \
+                Tmoments_resolutions[:, index1, index1]
+            contribution_labels.append(labels[index1]+"-"+labels[index1])
+            count += 1
+            for index2 in range(index1+1, num_partials):
+                T_contributions[count] = Tomega_resolutions[:, index1, index2]+\
+                    Tomega_resolutions[:, index2, index1]
+                T_moments_contributions[count] = \
+                    Tmoments_resolutions[:, index1, index2] \
+                    + Tmoments_resolutions[:, index2, index1]
+                contribution_labels.append(labels[index1]+"-"+\
+                                           labels[index2])
+                count += 1
+        if inset_bounding_box is not None:
+            T_mhalf_relative = \
+                T_moments_contributions[:,moments_inset_index] \
+                / np.sum(T_moments_contributions[:,moments_inset_index])
+        else:
+            # We don't need T_mhalf_relative
+            T_mhalf_relative = np.empty((num_contributions,))
+        
+        fig, ax = plt.subplots()
+        total_stack = np.zeros_like(self.omega)
+        plot_handles = []
+        if inset_bounding_box is not None:
+            ax2 = ax.inset_axes(inset_bounding_box)
+            total_stack2 = 0
+            plot_handles2 = []
+        for index, (data, T_mhalf, style, label) \
+            in enumerate(zip(T_contributions, T_mhalf_relative,
+                            hatchplot_style, contribution_labels)):
+            plot_handle = \
+                ax.fill_between(self.omega, total_stack + data, y2=total_stack, 
+                                zorder=-index, linewidth=0, label=label,
+                                hatch=style['hatch'], fc=style['color1'], 
+                                edgecolor=style['color2'])
+            ax.plot(self.omega, total_stack + data, zorder=0, color='k', 
+                    linewidth=0.5)
+            total_stack += data
+            plot_handles.append(plot_handle)
+            if inset_bounding_box is not None:
+                plot_handle2 = ax2.bar(0.0, T_mhalf, 1.0, label=label, 
+                                    zorder=-index, bottom=total_stack2, 
+                                    linewidth=0, hatch=style['hatch'], 
+                                    fc=style['color1'], 
+                                    edgecolor=style['color2'])
+                ax2.plot(np.array([-0.5,0.5]), 
+                            np.tile(total_stack2+T_mhalf, 2), 
+                            zorder=0, color='k', linewidth=0.5)
+                label_shift = style.get("label_shift", 0)
+                ax2.text(0.51, total_stack2 + 0.5*T_mhalf + label_shift, 
+                            label, fontsize=12, horizontalalignment="left", 
+                            verticalalignment="center_baseline",)
+                total_stack2 += T_mhalf
+                plot_handles2.append(plot_handle2)
+        plot_handle_total, = ax.plot(self.omega, self.Tomega, 
+                                        color="black", label="Total")
+        plot_handles.append(plot_handle_total)
+        
+        if title is None:
+            title = "1-electron-2-phonon spectral function"
+        ax.set_title(title, fontsize=text_sizes[2])
+        ax.set_xlabel("Frequency ("+self.unit+")", fontsize=text_sizes[1])
+        ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+        xmin, xmax = round_plot_range(0, self.omega_max, clamp_min=0)
+        ymin, ymax = round_plot_range(0, np.max(self.Tomega), clamp_min=0)
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.tick_params(axis='both', labelsize=text_sizes[0])
+        if inset_bounding_box is None:
+            ax.legend(handles=plot_handles[::-1], fontsize=text_sizes[0])
+        else:
+            ax2.set_xlim(-0.5, 0.5)
+            ax2.set_ylim( 0.0, 1)
+            ax2.set_ylabel("$\\mathcal{T}_{"+str(inset_moment)+\
+                            "}$ contribution", fontsize=12)
+            ax2.tick_params(axis='both', labelsize=text_sizes[0],
+                            left=False, labelleft=False, bottom=False, 
+                            labelbottom=False)
+        fig.tight_layout()
+        fig.show()
+        if save_filename is not None:
+            create_path(save_filename)
+            fig.savefig(save_filename+".pdf")
+        return fig, ax, plot_handle
     
