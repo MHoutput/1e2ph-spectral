@@ -2607,16 +2607,23 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         if subplots is False:
             fig_handles = []
             ax_handles = []
+            save_filenames = []
             figsize = (6.4, 4.8)
-            for index in range(len(classes)):
+            for LATO_class in classes:
                 fig, ax = plt.subplots(figsize=figsize)
                 fig_handles.append(fig)
-                ax_handles.append(ax)              
+                ax_handles.append(ax)
+                if save_filename is not None:
+                    save_name = save_filename+"_"+LATO_class
+                else:
+                    save_name = None
+                save_filenames.append(save_name)              
         else:
             figsize = (6.4*2, 4.8*2)
             fig, axs = plt.subplots(2, 2, figsize=figsize)
             fig_handles = [fig]
             ax_handles = axs.flat
+            save_filenames = [save_filename]
         plot_handles = []
         for index, ax in enumerate(ax_handles):
             marker_sizes = np.real(marker_max_radius**2*\
@@ -2683,12 +2690,12 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
                 fig_handles[index].tight_layout()
                 fig_handles[index].savefig(save_filename+"_"+\
                                            classes[index]+".pdf")
-        for fig in fig_handles:
+        for fig, save_name in zip(fig_handles, save_filenames):
             fig.tight_layout()
             fig.show()
-        if save_filename is not None:
-            create_path(save_filename)
-            fig.savefig(save_filename+".pdf")
+            if save_name is not None:
+                create_path(save_name)
+                fig.savefig(save_name+".pdf")
         return fig_handles
 
 class YCalculation():
@@ -4170,7 +4177,7 @@ class TomegaResults():
             ax2.set_xlim(-0.5, 0.5)
             ax2.set_ylim( 0.0, 1)
             ax2.set_ylabel("$\\mathcal{T}_{"+str(inset_moment)+\
-                            "}$ contribution", fontsize=12)
+                            "}$ contribution", fontsize=text_sizes[0])
             ax2.tick_params(axis='both', labelsize=text_sizes[0],
                             left=False, labelleft=False, bottom=False, 
                             labelbottom=False)
@@ -4179,5 +4186,5 @@ class TomegaResults():
         if save_filename is not None:
             create_path(save_filename)
             fig.savefig(save_filename+".pdf")
-        return fig, ax, plot_handle
+        return fig, [ax, ax2], plot_handles
     
