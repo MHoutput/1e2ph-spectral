@@ -1,6 +1,5 @@
 """
-Example usage that generates all figures in arXiv:2412.09456
-and arXiv:2412.09470
+Example usage that generates all figures in arXiv:2412.09470
 
 Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
@@ -23,11 +22,11 @@ mpl.rcParams['hatch.linewidth']=4.0
 np.set_printoptions(precision=6, suppress=True)
 
 #%% Input parameters
-plots_folder = "plots/"
+plots_folder = "plots_recalculated/"
 text_sizes=(15, 16, 18)
-recalculate = False  # Warning: recalculating data takes several days
-recalc_qmesh = 128  # Set to 16 for fast inaccurate calculation
-recalc_sigma = 0.1  # Smearing width, set to 0.8 when setting recalc_qmesh=16
+recalculate = True  # Warning: recalculating data takes several days
+recalc_qmesh = 16  # Set to 16 for fast inaccurate calculation
+recalc_sigma = 0.8  # Smearing width, set to 0.8 when setting recalc_qmesh=16
 recalc_parallel_jobs = 4
 
 def read_filename(name):
@@ -51,6 +50,7 @@ calc = PhonopyCommensurateCalculation(
     data_folder+"/LiF_a4.004_E0.0z_super666.yaml", 
     born_filename=data_folder+"/BORN_LiF_a4.004.txt")
 path, path_labels = get_path_and_labels("FCC", False)
+# Shift the labels slightly so they're easily readable on the final figure
 label_shifts =  [
                     [-0.05, 0.0, -0.05],    # Gamma
                     [0.02, -0.08, -0.1],    # X
@@ -87,6 +87,7 @@ calc = PhonopyCommensurateCalculation(
     data_folder+"/LiF_a4.004_E0.0z_super666.yaml", 
     born_filename=data_folder+"/BORN_LiF_a4.004.txt")
 path, path_labels = get_path_and_labels("FCC", True)
+# Shift the labels slightly so they're easily readable on the final figure
 label_shifts =  [
                     [-0.05, 0.0, -0.05],    # Gamma
                     [0.02, -0.08, -0.1],    # X
@@ -129,42 +130,43 @@ calc.plot_Brillouin(path=path, path_labels=path_labels, view_angles=view_angles,
 
 unit="THz"
 supercell_sizes = [2,3,4,5,6]
-inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
-# if recalculate:
-#     material_name = "LiF"
-#     moments = np.array([-0.5, -1.0, -1.5])
-#     a_str = "_a4.004"
-#     Efield = 0.01
-#     data_folder = "data/LiF/Efields"
-#     born_file = data_folder+"/BORN_"+material_name+a_str
-#     common_str = data_folder+"/"+material_name+a_str+"_"
-#     for supercell_size in supercell_sizes:
-#         supercell_string = "super"+3*str(supercell_size)
-#         Eminus_file = common_str+"E-"+str(Efield)+"_"+supercell_string+".yaml"
-#         Ezero_file = common_str+"E0.0_"+supercell_string+".yaml"
-#         Eplus_file = common_str+"E"+str(Efield)+"_"+supercell_string+".yaml"
-#         Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
-#                             np.array([-Efield,0.00,Efield]), 
-#                             born_filename=born_file, take_imag=True)
-#         plot_title = "LiF "+supercell_string
-#         savedata_filename = "results/LiF/"+supercell_string+"/qmesh"\
-#             +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
-#         savefig_filename = None
-#         savetxt_filename = None
-#         Ycalc.calculate_Tomega(
-#             q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit, 
-#             sigma=recalc_sigma, include_nac="Gonze", moments=moments, 
-#             q_split_levels=2, parallel_jobs=recalc_parallel_jobs, 
-#             savedata_filename = savedata_filename, 
-#             savefigures_filename = savefig_filename, 
-#             savetxt_filename = savetxt_filename, title=plot_title)
+if recalculate:
+    material_name = "LiF"
+    moments = np.array([-0.5, -1.0, -1.5])
+    a_str = "_a4.004"
+    Efield = 0.01
+    data_folder = "data/LiF"
+    born_file = data_folder+"/BORN_"+material_name+a_str+".txt"
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    print("Started LiF T(omega) calculations at T=0K")
+    print("---------------------------------------------")
+    for index, supercell_size in enumerate(supercell_sizes):
+        supercell_string = "super"+3*str(supercell_size)
+        Eminus_file = common_str+"E-"+str(Efield)+"z_"+supercell_string+".yaml"
+        Ezero_file = common_str+"E0.0z_"+supercell_string+".yaml"
+        Eplus_file = common_str+"E"+str(Efield)+"z_"+supercell_string+".yaml"
+        Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                            np.array([-Efield,0.00,Efield]), 
+                            born_filename=born_file, take_imag=True)
+        savedata_filename = "results/LiF/"+supercell_string+"/qmesh"\
+            +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str+"_T0"
+        results = Ycalc.calculate_Tomega(
+            q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit, 
+            sigma=recalc_sigma, include_nac="Gonze", moments=moments, 
+            q_split_levels=2, parallel_jobs=recalc_parallel_jobs, 
+            savedata_filename = savedata_filename, temperature=0)
+        print("Finished "+str(index+1)+" of "+str(len(supercell_sizes))\
+              +" calculations")
+    print("\n")
 omega_max = 0
 Tomega_max = 0
 fig, ax = plt.subplots()
 plot_handles = []
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
 for index, supercell_size in enumerate(supercell_sizes):
     supercell_string = "super"+str(supercell_size)*3
-    results = TomegaResults("results/LiF/"+supercell_string+"/"+inputs_string+"_T0.npz")
+    results = TomegaResults("results/LiF/"+supercell_string+"/"+\
+                            inputs_string+"_T0.npz")
     data = results.to_dict()
     omega = data["omega"]
     T_omega = data["Tomega"]
@@ -250,36 +252,32 @@ print("Maximum value of |Y|² on the summed plot: "+str(Y2_sum_max)+"Å²")
 
 # #%% Plot of LATO contributions to T(omega) in LiF
 
+# # There's actually no need to recalculate, the calculation was already
+# # performed in the convergence plot
 # if recalculate:
-    # unit="THz"
-    # material_name = "LiF"
-    # moments = np.array([-0.5, -1.0, -1.5])
-    # supercell_string = "super666"
-    # a_str = "_a4.004"
-    # Efield = 0.01
-    # data_folder = "data/LiF/Efields"
-    # born_file = data_folder+"/BORN_"+material_name+a_str
-    # common_str = data_folder+"/"+material_name+a_str+"_"
-    # Eminus_file = common_str+"E-"+str(Efield)+"_"+supercell_string+".yaml"
-    # Ezero_file = common_str+"E0.0_"+supercell_string+".yaml"
-    # Eplus_file = common_str+"E"+str(Efield)+"_"+supercell_string+".yaml"
-    # Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
-    #                     np.array([-Efield,0.00,Efield]), 
-    #                     born_filename=born_file, take_imag=True)
-    # plot_title = "LiF"
-    # savedata_filename = "results/LiF/"+supercell_string+"/qmesh"\
-    #     +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
-    # savefig_filename = plots_folder+"LiF_Tomega_LATO_"+inputs_string
-    # savetxt_filename = plots_folder+"LiF_Tomega_LATO_"+inputs_string+"_data"
-    # Ycalc.calculate_Tomega(
-    #     q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit,
-    #     sigma=recalc_sigma, include_nac="Gonze", moments=moments,
-    #     q_split_levels=2, parallel_jobs=recalc_parallel_jobs,
-    #     savedata_filename = savedata_filename, 
-    #     savefigures_filename = savefig_filename,
-    #     savetxt_filename = savetxt_filename,
-    #     title=plot_title)
-
+#     unit="THz"
+#     material_name = "LiF"
+#     moments = np.array([-0.5, -1.0, -1.5])
+#     supercell_string = "super666"
+#     a_str = "_a4.004"
+#     Efield = 0.01
+#     data_folder = "data/LiF"
+#     born_file = data_folder+"/BORN_"+material_name+a_str+".txt"
+#     common_str = data_folder+"/"+material_name+a_str+"_"
+#     Eminus_file = common_str+"E-"+str(Efield)+"z_"+supercell_string+".yaml"
+#     Ezero_file = common_str+"E0.0z_"+supercell_string+".yaml"
+#     Eplus_file = common_str+"E"+str(Efield)+"z_"+supercell_string+".yaml"
+#     Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+#                         np.array([-Efield,0.00,Efield]), 
+#                         born_filename=born_file, take_imag=True)
+#     savedata_filename = "results/LiF/"+supercell_string+"/qmesh"\
+#         +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str
+#     results = Ycalc.calculate_Tomega(
+#         q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit,
+#         sigma=recalc_sigma, include_nac="Gonze", moments=moments,
+#         q_split_levels=2, parallel_jobs=recalc_parallel_jobs,
+#         savedata_filename = savedata_filename, temperature = 0)
+# else:
 inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
 results = TomegaResults("results/LiF/super666/"+inputs_string+"_T0.npz")
 data = results.to_dict()

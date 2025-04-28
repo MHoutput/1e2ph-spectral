@@ -3968,8 +3968,6 @@ class TomegaResults():
                 - hatch: hatching style from Matplotlib
                 - color1: background color for the hatching
                 - color2: color of the hatching pattern
-                - label_shift: optional, shift for the label in the
-                  inset figure. Default: 0, no shift
             
             Default:
             - For resolution="LATO":
@@ -4126,6 +4124,7 @@ class TomegaResults():
         fig, ax = plt.subplots()
         total_stack = np.zeros_like(self.omega)
         plot_handles = []
+        text_handles = []
         if inset_bounding_box is not None:
             ax2 = ax.inset_axes(inset_bounding_box)
             total_stack2 = 0
@@ -4151,12 +4150,12 @@ class TomegaResults():
                 ax2.plot(np.array([-0.5,0.5]), 
                             np.tile(total_stack2+T_mhalf, 2), 
                             zorder=0, color='k', linewidth=0.5)
-                label_shift = style.get("label_shift", 0)
-                ax2.text(0.51, total_stack2 + 0.5*T_mhalf + label_shift, 
+                t_han = ax2.text(0.51, total_stack2 + 0.5*T_mhalf, 
                             label, fontsize=12, horizontalalignment="left", 
-                            verticalalignment="center_baseline",)
+                            verticalalignment="center_baseline")
                 total_stack2 += T_mhalf
                 plot_handles2.append(plot_handle2)
+                text_handles.append(t_han)
         plot_handle_total, = ax.plot(self.omega, self.Tomega, 
                                         color="black", label="Total")
         plot_handles.append(plot_handle_total)
@@ -4181,6 +4180,28 @@ class TomegaResults():
             ax2.tick_params(axis='both', labelsize=text_sizes[0],
                             left=False, labelleft=False, bottom=False, 
                             labelbottom=False)
+            bboxes = [txt_han.get_window_extent() \
+                      .transformed(ax2.transData.inverted()) 
+                      for txt_han in text_handles]
+            
+            # Calculate new label positions so that the labels don't overlap
+            text_heights = [bbox.y1-bbox.y0 for bbox in bboxes]
+            text_middles = np.array([0.5*(bbox.y0+bbox.y1) for bbox in bboxes])
+            for debug_i in range(50): # perform at most 50 steps
+                collision_detected = False
+                for index in range(len(text_middles)-1):
+                    diff = text_middles[index+1]-text_middles[index] \
+                        - 0.5*(text_heights[index+1] + text_heights[index])
+                    if diff < 0:
+                        # If two labels overlap, push them both equally far away
+                        text_middles[index] += 0.6*diff
+                        text_middles[index+1] -= 0.6*diff
+                        collision_detected = True
+                if not collision_detected:
+                    break
+            for txt_han, y_pos in zip(text_handles, text_middles):
+                txt_han.set_y(y_pos)
+
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
