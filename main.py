@@ -24,7 +24,7 @@ np.set_printoptions(precision=6, suppress=True)
 #%% Input parameters
 plots_folder = "plots/"
 text_sizes=(15, 16, 18)
-recalculate = False  # Warning: recalculating data takes several days
+recalculate = False  # Warning: recalculating T(omega) may take several days
 recalc_qmesh = 128  # Set to 16 for fast inaccurate calculation
 recalc_sigma = 0.1  # Smearing width, set to 0.8 when setting recalc_qmesh=16
 recalc_parallel_jobs = 4
@@ -42,6 +42,7 @@ def read_filename(name):
         "file_type": extension
     }
     return material_props
+
 
 #%% Plot of the FCC Brillouin zone with high-symmetry path
 
@@ -164,17 +165,19 @@ fig, ax = plt.subplots()
 plot_handles = []
 inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
 for index, supercell_size in enumerate(supercell_sizes):
-    supercell_string = "super"+str(supercell_size)*3
+    supercell_string = "super"+str(supercell_size)*3  # e.g. super666
+    supercell_string2 = "x".join(str(supercell_size)*3)  # e.g. 6x6x6
     results = TomegaResults("results/LiF/"+supercell_string+"/"+\
                             inputs_string+"_T0.npz")
     data = results.to_dict()
     omega = data["omega"]
     T_omega = data["Tomega"]
     if index == 0:
-        full_data_array = np.array([omega, T_omega])
-    else:
-        full_data_array = np.append(full_data_array, np.array([T_omega]), 
-                                    axis=0)  
+        full_data_array = np.array([omega])
+        header = "  Frequency (THz)      "
+    full_data_array = np.append(full_data_array, np.array([T_omega]), axis=0)
+    header += "    T(omega), "+(supercell_string2).ljust(11)
+
     omega_max = max(omega[-1], omega_max)   
     Tomega_max = max(np.max(T_omega), Tomega_max) 
     mesh_str = "$"+str(supercell_size)+"\\times"\
@@ -200,13 +203,7 @@ fig.show()
 fig.savefig(plots_folder+"LiF_Tomega_conv_"+inputs_string+".pdf")
 
 np.savetxt(plots_folder+"/LiF_Tomega_conv_"+inputs_string+"_data.txt", 
-           np.transpose(full_data_array),
-           header="  Frequency (THz)      "+\
-                "    T(omega), 2x2x2      "+\
-                "    T(omega), 3x3x3      "+\
-                "    T(omega), 4x4x4      "+\
-                "    T(omega), 5x5x5      "+\
-                "    T(omega), 6x6x6      ")
+           np.transpose(full_data_array), header=header)
 
 #%% Plot of phonon bands and LATO weights in LiF
 
@@ -266,6 +263,75 @@ fig.tight_layout()
 fig.show()
 fig.savefig(plots_folder+"LiF_Tomega_LATO_"+inputs_string+".pdf")
 
+#%% Plot of T(omega) for different temperatures in LiF
+
+unit="THz"
+temperatures = [0,50,100,150,200,250,300]
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a4.004"
+if recalculate:
+    material_name = "LiF"
+    moments = np.array([-0.5, -1.0, -1.5])
+    a_str = "_a4.004"
+    Efield = 0.01
+    data_folder = "data/LiF"
+    born_file = data_folder+"/BORN_"+material_name+a_str+".txt"
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    Eminus_file = common_str+"E-"+str(Efield)+"z_super666.yaml"
+    Ezero_file = common_str+"E0.0z_super666.yaml"
+    Eplus_file = common_str+"E"+str(Efield)+"z_super666.yaml"
+    Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                        np.array([-Efield,0.00,Efield]), 
+                        born_filename=born_file, take_imag=True)
+    print("Started LiF T(omega) temperature calculations for 6x6x6 supercell")
+    print("-----------------------------------------------------------------")
+    for index, temperature in enumerate(temperatures):
+        savedata_filename = "results/LiF/super666/qmesh"\
+            +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str\
+            +"_T"+str(temperature)
+        results = Ycalc.calculate_Tomega(
+            q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit, 
+            sigma=recalc_sigma, include_nac="Gonze", moments=moments, 
+            q_split_levels=2, parallel_jobs=recalc_parallel_jobs, 
+            savedata_filename = savedata_filename, temperature=temperature)
+        print("Finished "+str(index+1)+" of "+str(len(temperatures))\
+              +" calculations")
+    print("\n")
+omega_max = 0
+Tomega_max = 0
+fig, ax = plt.subplots()
+plot_handles = []
+for index, temperature in enumerate(temperatures):
+    temp_str = "T"+str(temperature)
+    data = np.load("results/LiF/super666/"+inputs_string+"_"+temp_str+".npz")
+    omega = data["omega"]
+    T_omega = data["Tomega"]  
+    omega_max = max(omega[-1], omega_max)   
+    Tomega_max = max(np.max(T_omega), Tomega_max) 
+    legend_str = "$T = "+str(temperature)+"$K"
+    plot_handle, = ax.plot(omega, T_omega, label = legend_str)
+    plot_handles.append(plot_handle)
+    if index == 0:
+        full_data_array = np.array([omega])
+        header = "  Frequency (THz)      "
+    full_data_array = np.append(full_data_array, np.array([T_omega]), 
+                                axis=0)
+    header += "    T(omega), "+(str(temperature)+" K").ljust(11)
+
+ymin, ymax = round_plot_range(0, Tomega_max, clamp_min=0)
+ax.set_title("LiF", size=text_sizes[2])
+ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
+ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+ax.set_xlim(0, omega_max)
+ax.set_ylim(ymin, ymax)
+ax.legend(handles=plot_handles, fontsize=13, loc="upper right")
+ax.tick_params(axis='both', labelsize=text_sizes[0])
+ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,-3))
+fig.tight_layout()
+fig.show()
+
+fig.savefig(plots_folder+"LiF_Tomega_temps_"+inputs_string+".pdf")
+np.savetxt(plots_folder+"/LiF_Tomega_temps_"+inputs_string+"_data.txt", 
+           np.transpose(full_data_array), header=header)
 
 
 
@@ -381,17 +447,18 @@ fig, ax = plt.subplots()
 plot_handles = []
 inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a3.99"
 for index, supercell_size in enumerate(supercell_sizes):
-    supercell_string = "super"+str(supercell_size)*3
+    supercell_string = "super"+str(supercell_size)*3  # e.g. super444
+    supercell_string2 = "x".join(str(supercell_size)*3)  # e.g. 4x4x4
     results = TomegaResults("results/KTaO3/"+supercell_string+"/"+\
                             inputs_string+"_T0.npz")
     data = results.to_dict()
     omega = data["omega"]
     T_omega = data["Tomega"]
     if index == 0:
-        full_data_array = np.array([omega, T_omega])
-    else:
-        full_data_array = np.append(full_data_array, np.array([T_omega]), 
-                                    axis=0)  
+        full_data_array = np.array([omega])
+        header = "  Frequency (THz)      "
+    full_data_array = np.append(full_data_array, np.array([T_omega]), axis=0)
+    header += "    T(omega), "+(supercell_string2).ljust(11)
     omega_max = max(omega[-1], omega_max)   
     Tomega_max = max(np.max(T_omega), Tomega_max) 
     mesh_str = "$"+str(supercell_size)+"\\times"\
@@ -440,7 +507,7 @@ plot_data = Ycalc.plotY(path, path_labels, include_nac="Gonze", npoints=101,
                         num_markers=151,
                         degenerate_cutoff=1e-3, subplots=None,
                         save_filename=savefig_filename,
-                        plot_range=(0,20), title2=title_string,
+                        plot_range=(0,30), title2=title_string,
                         text_sizes=text_sizes)
 Y2_max = plot_data[0]
 Y2_sum_max = plot_data[1]
@@ -462,3 +529,73 @@ axes[1].set_ylabel("Relative energy contribution", fontsize=text_sizes[0])
 fig.tight_layout()
 fig.show()
 fig.savefig(plots_folder+"KTaO3_Tomega_LATO_"+inputs_string+".pdf")
+
+#%% Plot of T(omega) for different temperatures in KTaO3
+
+unit="THz"
+temperatures = [0,50,100,150,200,250,300]
+inputs_string = "qmesh"+str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+"_a3.99"
+if recalculate:
+    material_name = "KTaO3"
+    moments = np.array([-0.5, -1.0, -1.5])
+    a_str = "_a3.99"
+    Efield = 0.005
+    data_folder = "data/KTaO3"
+    born_file = data_folder+"/BORN_"+material_name+a_str+".txt"
+    common_str = data_folder+"/"+material_name+a_str+"_"
+    Eminus_file = common_str+"E-"+str(Efield)+"z_super444.yaml"
+    Ezero_file = common_str+"E0.0z_super444.yaml"
+    Eplus_file = common_str+"E"+str(Efield)+"z_super444.yaml"
+    Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
+                        np.array([-Efield,0.00,Efield]), 
+                        born_filename=born_file, take_imag=True)
+    print("Started KTaO3 T(omega) temperature calculations for 4x4x4 supercell")
+    print("-------------------------------------------------------------------")
+    for index, temperature in enumerate(temperatures):
+        savedata_filename = "results/KTaO3/super444/qmesh"\
+            +str(recalc_qmesh)+"_sigma"+str(recalc_sigma)+a_str\
+            +"_T"+str(temperature)
+        results = Ycalc.calculate_Tomega(
+            q_mesh_size=recalc_qmesh, num_omegas=1001, unit=unit, 
+            sigma=recalc_sigma, include_nac="Gonze", moments=moments, 
+            q_split_levels=2, parallel_jobs=recalc_parallel_jobs, 
+            savedata_filename = savedata_filename, temperature=temperature)
+        print("Finished "+str(index+1)+" of "+str(len(temperatures))\
+              +" calculations")
+    print("\n")
+omega_max = 0
+Tomega_max = 0
+fig, ax = plt.subplots()
+plot_handles = []
+for index, temperature in enumerate(temperatures):
+    temp_str = "T"+str(temperature)
+    data = np.load("results/KTaO3/super444/"+inputs_string+"_"+temp_str+".npz")
+    omega = data["omega"]
+    T_omega = data["Tomega"]  
+    omega_max = max(omega[-1], omega_max)   
+    Tomega_max = max(np.max(T_omega), Tomega_max) 
+    legend_str = "$T = "+str(temperature)+"$K"
+    plot_handle, = ax.plot(omega, T_omega, label = legend_str)
+    plot_handles.append(plot_handle)
+    if index == 0:
+        full_data_array = np.array([omega])
+        header = "  Frequency (THz)      "
+    full_data_array = np.append(full_data_array, np.array([T_omega]), 
+                                axis=0)
+    header += "    T(omega), "+(str(temperature)+" K").ljust(11)
+
+ymin, ymax = round_plot_range(0, Tomega_max, clamp_min=0)
+ax.set_title("KTaO3", size=text_sizes[2])
+ax.set_xlabel("Frequency ("+unit+")", fontsize=text_sizes[1])
+ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
+ax.set_xlim(0, omega_max)
+ax.set_ylim(ymin, ymax)
+ax.legend(handles=plot_handles, fontsize=13, loc="upper right")
+ax.tick_params(axis='both', labelsize=text_sizes[0])
+ax.ticklabel_format(axis='y', style='sci', scilimits=(-3,-3))
+fig.tight_layout()
+fig.show()
+
+fig.savefig(plots_folder+"KTaO3_Tomega_temps_"+inputs_string+".pdf")
+np.savetxt(plots_folder+"/KTaO3_Tomega_temps_"+inputs_string+"_data.txt", 
+           np.transpose(full_data_array), header=header)
