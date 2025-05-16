@@ -3654,7 +3654,6 @@ class YCalculation():
         else:
             omega_min_scale = plot_range[0]
             omega_max_scale = plot_range[1]
-        ax.set_ylim(omega_min_scale, omega_max_scale)
         
         for index, ax in enumerate(ax_handles):
             marker_sizes = marker_max_radius**2*Ys2_perm[:,index,:]
