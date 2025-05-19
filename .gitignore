@@ -1,3 +1,5 @@
 test*.py
 test/*
+choose_material.py
+choose_*/*
 __pycache__/*

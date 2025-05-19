@@ -8,7 +8,6 @@ Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 ### PREAMBLE
 
 ## Import necessary libraries
-import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from phonopyReaders import PhonopyCommensurateCalculation, YCalculation
