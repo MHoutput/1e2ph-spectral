@@ -5,18 +5,21 @@ and that generates some simple figures
 Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
 """
 
+### PREAMBLE
+
+## Import necessary libraries
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from phonopyReaders import PhonopyCommensurateCalculation, YCalculation
 from pathsLabels import get_path_and_labels
+
+## Set plot options for matplotlib
 mpl.rcParams['font.family'] = 'serif'
 mpl.rcParams['font.serif'] = ['Computer Modern']
 mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble']="\\usepackage{bm}"
 mpl.rcParams['hatch.linewidth']=4.0
-
-np.set_printoptions(precision=6, suppress=True, linewidth=150)
 
 
 ### PHONON FREQUENCIES
