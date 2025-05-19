@@ -1,3 +1,4 @@
 test*.py
+test/*
 testfigures/*
 __pycache__/*

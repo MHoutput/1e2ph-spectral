@@ -4186,7 +4186,7 @@ class TomegaResults():
             # Calculate new label positions so that the labels don't overlap
             text_heights = [bbox.y1-bbox.y0 for bbox in bboxes]
             text_middles = np.array([0.5*(bbox.y0+bbox.y1) for bbox in bboxes])
-            for debug_i in range(50): # perform at most 50 steps
+            for _ in range(50): # perform at most 50 steps
                 collision_detected = False
                 for index in range(len(text_middles)-1):
                     diff = text_middles[index+1]-text_middles[index] \
