@@ -720,14 +720,16 @@ class PhonopyCalculation:
                 frequencies_in_THz = frequencies/33.356409529
             case "eV":
                 frequencies_in_THz = frequencies/4.135667696e-3
+            case "meV":
+                frequencies_in_THz = frequencies/4.135667696
             case "PhonoPy":
                 frequencies_in_THz = frequencies*15.633302
             case _:
                 warn_string = str(from_unit)+\
                 """ is not a recognized phonon frequency unit.
-                Currently only 'THz', 'rad/s', 'cm-1',  'eV', and 'PhonoPy'
-                are supported. It is assumed that the input frequencies
-                were in THz."""
+                Currently only 'THz', 'rad/s', 'cm-1', 'eV', 'meV',
+                and 'PhonoPy' are supported. It is assumed that the input
+                frequencies were in THz."""
                 warnings.warn(warn_string)
                 frequencies_in_THz = frequencies
         
@@ -740,13 +742,16 @@ class PhonopyCalculation:
                 return frequencies_in_THz*33.356409529
             case "eV":
                 return frequencies_in_THz*4.135667696e-3
+            case "meV":
+                return frequencies_in_THz*4.135667696
             case "PhonoPy":
                 return frequencies_in_THz/15.633302
             case _:
                 warn_string = str(to_unit)+\
                 """ is not a recognized phonon frequency unit.
-                Currently only 'THz', 'rad/s', 'cm-1', 'eV', and 'PhonoPy'
-                are supported. Frequencies in THz were returned instead."""
+                Currently only 'THz', 'rad/s', 'cm-1', 'eV', 'meV',
+                and 'PhonoPy' are supported. 
+                Frequencies in THz were returned instead."""
                 warnings.warn(warn_string)
                 return frequencies_in_THz
     
@@ -2218,6 +2223,100 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
 
         return LATO_weights
     
+    def get_polarities(self, lebedev_grid=21, include_nac="Gonze", 
+                       averaged=True, unit="THz", clean_value=None):
+        """ Calculate mode polarities and Γ-point phonon frequencies
+
+        Arguments
+        ---------
+        lebedev_order: int or (points, weights)
+            If int:
+            Order of the grid used for Lebedev quadrature
+            Must be an order allowed by scipy.integrate.lebedev_rule
+            (3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31,
+            35, 41, 47, 53, 59, 65, 71, 77, 83, 89, 95, 101, 107, 113,
+            119, 125, 131)
+            If (points, weights):
+            Unit sphere points and weights that define a Lebedev grid
+            of any order
+        include_nac: str
+            Indicate what kind of non-analytic correction to include:
+                - "None": no non-analytic correction, gives unphysical 
+                  results for polar materials
+                - "Gonze": PhonoPy default method, requires BORN input
+                  X. Gonze and C. Lee, Phys. Rev. B 55, 10355 (1997)
+                - "Wang": Method based on Y Wang et al., 
+                  J. Phys.: Condens. Matter 22 202201 (2010)
+            Default: "Gonze"
+        averaged: bool
+            If True, return phonon frequencies and mode polarities
+            averaged over all angles. The returned mode polarities
+            are the root-mean-square averaged mode polarities.
+            If False, return frequencies and mode polarities as a
+            function of angles.
+            Default: True
+        unit: str
+            Unit for the phonon frequencies.
+            See Phonopy_calculation.convert_units for possible units.
+            Default: "THz"
+        clean_value: real, or None
+            If real, clean frequencies to remove imaginary modes
+            and set the minimum frequency value to clean_value
+            Default: None
+
+
+        Returns
+        -------
+        omegas: np.array of real
+            shape(numbands,) if averaged=True
+            shape(numbands, len(qpoints)) if averaged=False
+            Γ-point phonon frequencies, in the requested unit
+        mode_polarities: np.array of real
+            shape(numbands,) if averaged=True
+            shape(numbands, len(qpoints)) if averaged=False
+            Γ-point mode polarities, in (a.m.u.)^(-0.5)
+        weights: np.array of real
+            shape(len(qpoints))
+            Weights for Lebedev quadrature of the given order. Only
+            returned when averaged=False
+        qpoints: np.array of real
+            shape(len(qpoints), 3)
+            Unit sphere points for Lebedev quadrature of the given
+            order. The number of points is determined by lebedev_order.
+            Only returned when averaged=False
+        """
+
+        if isinstance(lebedev_grid, int) or isinstance(lebedev_grid, float):
+            lebedev_grid = np.floor(lebedev_grid)
+            points, weights = scipy.integrate.lebedev_rule(lebedev_grid)
+        else:
+            points, weights = lebedev_grid
+        qpoints_norm = np.transpose(points)
+        weights_avg = weights/(4*np.pi)
+        latvecs = self.get_lattice_vectors()
+        small_radius = 0.01/np.sqrt(np.trace(latvecs @ np.transpose(latvecs)))
+        q_points_direct = np.transpose(small_radius*
+                                       (latvecs @ np.transpose(qpoints_norm)))
+        omegas, eigvecs = \
+            self.get_freqs_eigvecs_interpolated(q_points_direct, unit=unit, 
+                convention="c-type", include_nac=include_nac, 
+                clean_value=clean_value)
+        born_charges_3x3N = np.reshape(self.born_charges.T,
+                                       (self.num_dimensions,self.numbands), 
+                                       order='F')
+        inv_mass_matrix = np.diag(1/np.sqrt(np.diag(self.get_mass_matrix())))
+        mode_polarities = np.sum(np.tensordot(eigvecs, \
+            np.transpose(born_charges_3x3N @ inv_mass_matrix), 1) \
+            *qpoints_norm[:,None,:],2)
+        
+        if averaged:
+            omegas_avg = weights_avg @ omegas
+            mode_polarities_avg = \
+                np.sqrt(weights_avg @ (np.abs(mode_polarities)**2))
+            return omegas_avg, mode_polarities_avg
+        else:
+            return omegas, mode_polarities, weights, qpoints_norm
+    
     def polaron_ZPR(self, band_mass, lebedev_order=21, include_nac="Gonze",
                     temperature=0):
         """ Calculate weak-coupling polaron ZPR and effective alpha
@@ -2275,25 +2374,20 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             qpoints_norm = mass_info[:,1:(1+self.num_dimensions)]
             masses = mass_info[:,(1+self.num_dimensions):]
             sqrt_band_masses = np.mean(np.sqrt(masses), axis=1)
+            lebedev_grid = (np.transpose(qpoints_norm), weights)
+            omegas, mode_polarities, _, _ = \
+                self.get_polarities(lebedev_grid=lebedev_grid, 
+                                    include_nac=include_nac, 
+                                    averaged=False, unit="eV", clean_value=1e-5)
         else:
-            points, weights = scipy.integrate.lebedev_rule(lebedev_order)
-            qpoints_norm = np.transpose(points)
+            omegas, mode_polarities, weights, qpoints_norm = \
+                self.get_polarities(lebedev_grid=lebedev_order, 
+                                    include_nac=include_nac, 
+                                    averaged=False, unit="eV", clean_value=1e-5)
             sqrt_band_masses = np.full_like(weights, np.sqrt(band_mass))
+            
         weights_avg = weights/(4*np.pi)
-        latvecs = self.get_lattice_vectors()
-        small_radius = 0.01/np.sqrt(np.trace(latvecs @ np.transpose(latvecs)))
-        q_points_direct = np.transpose(small_radius*
-                                       (latvecs @ np.transpose(qpoints_norm)))
-        omegas, eigvecs = \
-            self.get_freqs_eigvecs_interpolated(q_points_direct, unit="eV", 
-                convention="c-type", include_nac=include_nac, clean_value=1e-5)
-        born_charges_3x3N = np.reshape(self.born_charges.T,
-                                       (self.num_dimensions,self.numbands), 
-                                       order='F')
-        inv_mass_matrix = np.diag(1/np.sqrt(np.diag(self.get_mass_matrix())))
-        mode_polarities_2 = np.abs(np.sum(np.tensordot(eigvecs, \
-            np.transpose(born_charges_3x3N @ inv_mass_matrix), 1) \
-            *qpoints_norm[:,None,:],2))**2
+        mode_polarities_2 = np.abs(mode_polarities)**2
         dielectric_qs = np.sum((qpoints_norm @ self.dielectric_tensor)\
                                *qpoints_norm,1)
         alphas_qs_branches = 2.790068265963579*sqrt_band_masses[:,None]* \
@@ -2311,20 +2405,13 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         
         phonon_pops = n_BE(self.convert_units(omegas, from_unit="eV", 
                                               to_unit="THz"), temperature)
-        # print(mode_polarities_2[0])
-        # print(omegas[0]*1e3)
-        # print(-weights_avg @ (alphas_qs_branches*omegas*(1+phonon_pops)))
-        # print(self.convert_units(omegas[0], from_unit="eV", to_unit="THz"))
         polaron_ZPR = -weights_avg @ \
             np.sum(alphas_qs_branches*omegas*(1+phonon_pops),1)
         polaron_inverse_lifetime = (1/0.6582119569)*weights_avg @ \
             np.sum(alphas_qs_branches*omegas*phonon_pops,1)
         effective_alpha = weights_avg @ np.sum(alphas_qs_branches,1)
         return polaron_ZPR, polaron_inverse_lifetime, effective_alpha
-        
-        
-
-
+    
     
     def plot_bands(self, path, path_labels, npoints=51, include_nac="None", 
                    unit="THz", title="Phonon dispersion", 
