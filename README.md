@@ -1,5 +1,6 @@
 # Summary
-PhonoPy postprocessing code to calculate the 1-electron-2-phonon spectral function from first principles, useful for long-range nonlinear electron phonon interaction
+PhonoPy postprocessing code to calculate the 1-electron-2-phonon spectral function from first principles, useful for long-range nonlinear electron phonon interaction. The code accompanies the following publication:
+M. Houtput, L. Ranalli, C. Verdi, S. Klimin, S. Ragni, C. Franchini, and J. Tempere, First-principles theory of nonlinear long-range electron-phonon interaction. Phys. Rev. B 111, 184320 (2025). DOI: https://doi.org/10.1103/PhysRevB.111.184320. Open-source article available at https://arxiv.org/abs/2412.09470.
 
 # Dependencies
 1e2ph-spectral is fully written in Python and requires the following external python libraries:
