@@ -1,3 +1,16 @@
+"""
+This script extract the mode polarities and phonon frequencies
+for CsPbI3 from the data for figure 3B of Poncé's 2019 paper:
+doi.org/10.1021/acsenergylett.8b02346
+The data itself can be found on materialscloud at:
+https://archive.materialscloud.org/record/2021.135
+These parameters are not reported in the paper, its SI, or the
+data repository on materialscloud, so we extract them ourselves
+based on the peak locations and heights in figure 3B
+
+Written by Matthew Houtput (matthew.houtput@uantwerpen.be)
+"""
+
 from matplotlib.markers import MarkerStyle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +32,7 @@ tauinvOmegas = tauinvPonce*THz_to_meV  # dimensionless, so correct units
 # ax.set_ylabel("$\\partial \\tau^{-1} / \\partial \\omega$")
 # plt.show()
 
-# Visual peak locations and widths, in THz:
+# Approximate peak locations and widths, in THz:
 peak1s = np.array([2.3, 4.6, 15.8])/THz_to_meV
 widths = np.array([0.5, 0.5, 0.5])/THz_to_meV  # Likely a numerical parameter
 
@@ -35,8 +48,6 @@ for index, (peak, width) in enumerate(zip(peak1s, widths)):
     areas[index] = area
     omegaLOs[index] = moment1/area
 
-print("LO phonon frequencies (meV): \n"+str(omegaLOs*THz_to_meV))
-print("Peak areas (THz): \n"+str(areas))
 
 ## Now we can find the mode polarities
 
@@ -60,12 +71,18 @@ phi = lambda x, x0: np.sqrt(x0/x)*(np.arcsinh(np.sqrt(x/x0))/(np.exp(x0)-1)
                                    + np.arccosh(np.maximum(1,np.sqrt(x/x0))) \
                                     *(x>x0)/(1-np.exp(-x0)))
 
-for omega, area in zip(omega_nus_SI, areas):
-    G2_nu_SI = area*1e12/((2/hbar**2)*unit_cell_volume_SI/(4*np.pi)*np.sqrt(2*band_mass/hbar)) *np.sqrt(omega)/phi(x, hbar*omega/(kB*T))
-    p2_nu = G2_nu_SI/((e**2/(epsvac*epsinf*unit_cell_volume_SI))**2*hbar/(2*omega) / 1.66053906892e-27)
-    print(p2_nu)
+squared_polarities = np.empty_like(omegaLOs)
+for index, (omega, area) in enumerate(zip(omega_nus_SI, areas)):
+    # The squared mode polarity is proportional to the peak area,
+    # but we need a lot of unit conversions and additional factors
+    squared_polarities[index] = area*1e12/((2/hbar**2)*unit_cell_volume_SI/(4*np.pi)*np.sqrt(2*band_mass/hbar))\
+          *np.sqrt(omega)/phi(x, hbar*omega/(kB*T))\
+            /((e**2/(epsvac*epsinf*unit_cell_volume_SI))**2*hbar/(2*omega) / 1.66053906892e-27)
+    
+print("LO phonon frequencies ω_ν, in meV: \n"+str(omegaLOs*THz_to_meV))
+print("Squared mode polarities |p_ν|^2, in (a.m.u.)^-1: \n"+str(squared_polarities))
 
-
+# For good measure we also make a plot of the inverse lifetimes
 files = ["data/CsPbI3/Ponce_epw1K0meV.txt", 
          "data/CsPbI3/Ponce_epw150K0meV.txt", 
          "data/CsPbI3/Ponce_epw300K0meV.txt"]
