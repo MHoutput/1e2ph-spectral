@@ -3609,9 +3609,9 @@ class YCalculation():
         Y2_sum_max_value: real
             Value of sum_{nu_2} |Y_{nu_1,nu_2}(q)|^2 corresponding
             to the largest marker
-        fig: figure handle
-        ax: axis handle
-        plot_handle: handle to the plot data
+        fig_handles: list of handles to all the figures
+        ax_handles: list of handles to all the axes
+        plot_handle: list of handles to all the plot data
 
         """
 
@@ -3829,6 +3829,9 @@ class YCalculation():
                                        distances[-1]-distances[0], 
                                        -omega_min_scale, fill=True, 
                                        color=(0.8, 0.8, 0.8), zorder=-10))
+        fig_handles.append(fig)
+        ax_handles.append(ax)
+        plot_handles.append(plot_handles_this)
         fig.tight_layout()
         fig.show()
         if save_filename is not None:
