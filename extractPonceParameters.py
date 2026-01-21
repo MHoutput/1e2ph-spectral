@@ -78,7 +78,7 @@ for index, (omega, area) in enumerate(zip(omega_nus_SI, areas)):
     squared_polarities[index] = area*1e12/((2/hbar**2)*unit_cell_volume_SI/(4*np.pi)*np.sqrt(2*band_mass/hbar))\
           *np.sqrt(omega)/phi(x, hbar*omega/(kB*T))\
             /((e**2/(epsvac*epsinf*unit_cell_volume_SI))**2*hbar/(2*omega) / 1.66053906892e-27)
-    
+
 print("LO phonon frequencies ω_ν, in meV: \n"+str(omegaLOs*THz_to_meV))
 print("Squared mode polarities |p_ν|^2, in (a.m.u.)^-1: \n"+str(squared_polarities))
 
