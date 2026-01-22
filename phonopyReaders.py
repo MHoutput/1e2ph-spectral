@@ -300,6 +300,7 @@ class PhonopyCalculation:
                     eigenvector_list = np.array(band['eigenvector'])
                     self.eigenvectors[index, nu] = \
                         eigenvector_list[:,:,0]+eigenvector_list[:,:,1]*1j
+        self.sort_qpoints()
         atom_info = mesh_dict.get('points')
         self.atom_names = np.empty((self.natom,), dtype=np.dtypes.StrDType)
         self.atom_masses = np.empty((self.natom,))
@@ -334,6 +335,88 @@ class PhonopyCalculation:
             loaded_array = np.loadtxt(born_filename, dtype=float, comments="#")
             self.dielectric_tensor = loaded_array[0,...].reshape((3,3))
             self.born_charges = loaded_array[1:,...].reshape((-1,3,3))
+
+    def sort_qpoints(self):
+        """ Sort qpoints, and associated frequencies and eigenvectors
+
+        Sorts the order in which the qpoints are stored, to match the
+        order of the output of get_dense_qmesh().
+        This function is automatically called by the constructor.
+        Not all .yaml input files will store the qpoints in the same
+        order, so sorting in this way is necessary for the correct
+        behavior of this code, in particular the implementation of
+        the Fourier interpolation.
+        """
+        permutation = self.get_qpoints_permutation()
+        self.qpoints = self.qpoints[permutation]
+        self.frequencies = self.frequencies[permutation]
+        self.eigenvectors = self.eigenvectors[permutation]
+
+    def get_qpoints_permutation(self, supercell_size=None, qpoints_to_sort=None, 
+                                q_equal_tolerance = 1e-3):
+        """ Get permutation that sorts qpoints
+        
+        Calculates the permutation that would sort the q-points into
+        the standard order used in this code, like the output of
+        get_dense_mesh().
+
+        Arguments
+        ---------
+        supercell_size: np.ndarray() of int, shape (3,)
+            Determines the grid of commensurate q-points.
+            Default: self.supercell_size
+
+        qpoints_to_sort: np.ndarray() of float, shape (numqpoints, 3)
+            Unsorted list of commensurate q-points
+            Default: self.qpoints
+
+        q_equal_tolerance: real
+            Two qpoints are considered equal if their distance is
+            smaller than this value.
+            Default: 1e-3
+        
+        Returns
+        -------
+        permutation: np.ndarray() of int, shape (numqpoints, )
+            Permutation of indices that can be used to sort qpoints,
+            following qpoints_sorted = qpoints_to_sort[permutation]
+
+        Raises
+        ------
+        ValueError
+            when the number of qpoints in qpoints_to_sort is wrong,
+            i.e. it does not equal np.prof(supercell_size)
+
+        ValueError
+            when one of the expected commensurate points cannot
+            be found in qpoints_to_sort. Usually, this indicates
+            that one or more commensurate points are missing in the
+            input .yaml file
+        """
+        if supercell_size is None:
+            supercell_size = self.supercell_size
+        if qpoints_to_sort is None:
+            qpoints_to_sort = self.qpoints
+        numqpoints = np.shape(qpoints_to_sort)[0]
+        if numqpoints != np.prod(supercell_size):
+            raise ValueError("number of qpoints must be "+
+                             "equal to prod(supercell_size)")
+        normalize_to_range = lambda x: ((x - 0.5) % -1) + 0.5
+        distance = lambda q1, q2: np.linalg.norm(normalize_to_range(q1-q2), 2)
+        qpoints_target = self.get_dense_qmesh(supercell_size)
+
+        permutation = np.empty((numqpoints, ), dtype=int)
+        for index1, q1 in enumerate(qpoints_target):
+            found_match = False
+            for index2, q2 in enumerate(qpoints_to_sort):
+                if distance(q1, q2) < q_equal_tolerance:
+                    permutation[index1] = index2
+                    found_match = True
+                    break
+            if not found_match:
+                raise ValueError("commensurate qpoint "+str(q1)+
+                                 " was not found in qpoints_to_sort")
+        return permutation
     
     def get_supercell_size(self):
         """ Return the supercell size """
