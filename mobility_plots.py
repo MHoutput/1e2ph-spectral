@@ -24,7 +24,7 @@ amu = 1.66053906892e-27  # Atomic mass unit, in kg
 kB = 1.380649e-23  # Boltzmann constant in J/K
 
 ### MAIN ARTICLE PLOTS
-recalculate = True  # If False, use precomputed data for the heaviest calculations
+recalculate = False  # If False, use precomputed data for the heaviest calculations
 plots_folder = "mobility_plots/"
 color_list = ["#FF4444", "#00BB00", "#4444BB", "#DD9922", "#BB44BB", "#888888"]
 
@@ -181,6 +181,7 @@ q_mesh_size = 32
 sigma = 0.025
 temperatures = np.arange(10, 510, 10)
 cutoffs = [0.05, 0.1, 0.2]
+params_string = "a6.276_EDIFF1e-08_disp0.005"
 if recalculate:  # Recalculate data from scratch
     for imaginary_cutoff in cutoffs:
         for temperature in temperatures:
@@ -269,7 +270,7 @@ ax.set_xlim([0,max(ks)])
 plt.xticks([0, k_max], ["R", str(lambda_max)+"RX"])
 ax.set_xlabel("$\\mathbf{k}$", fontsize=16)
 ax.set_ylabel("$1/\\tau_{\\mathbf{k}}$ (THz)", fontsize=16)
-ax.set_title("Inverse lifetime in $\\alpha$-CsPbI$_3$", fontsize=18)
+ax.set_title("Inverse lifetime in CsPbI$_3$", fontsize=18)
 ax.legend(handles=plot_handles, loc="upper right", fontsize=12)
 ax.tick_params(axis='both', which='major', labelsize=13)
 fig.tight_layout()
@@ -354,7 +355,7 @@ ax.set_xscale("log")
 ax.set_yscale("log")
 ax.set_xlabel("Temperature (K)", fontsize=16)
 ax.set_ylabel("Mobility (cm²/Vs)", fontsize=16)
-ax.set_title("Electron mobility in $\\alpha$-CsPbI$_3$", fontsize=18)
+ax.set_title("Electron mobility in CsPbI$_3$", fontsize=18)
 ax.legend(handles=plot_handles, loc="upper right", fontsize=14)
 ax.tick_params(axis='both', which='major', labelsize=13)
 ax.set_xticks([100, 200, 300, 400, 500])
@@ -394,7 +395,7 @@ ax.set_ylim([0,0.05])
 ax.set_xlim([0,max(Ts)])
 ax.set_xlabel("Temperature (K)", fontsize=16)
 ax.set_ylabel("Inverse mobility (V*s/cm²)", fontsize=16)
-ax.set_title("Inverse electron mobility in $\\alpha$-CsPbI$_3$", fontsize=18)
+ax.set_title("Inverse electron mobility in CsPbI$_3$", fontsize=18)
 ax.legend(handles=plot_handles, loc="upper left", fontsize=14)
 ax.tick_params(axis='both', which='major', labelsize=13)
 fig.tight_layout()
@@ -475,7 +476,7 @@ for plot_index, plot_variables in enumerate([plot_variables_1, plot_variables_2]
     plot_handle2, = ax.plot(xvalues, der_normalities, label="Derivative", color=color_list[1], marker="o", linestyle="dashed")
     plot_handles = (plot_handle1, plot_handle2)
     ax.set_title(title, fontsize=16)
-    ax.set_xlabel(xname + "("+xunit+")", fontsize=13)
+    ax.set_xlabel(xname + " ("+xunit+")", fontsize=13)
     ax.set_ylabel("Noise metric $\\chi^2$", fontsize=13)
     ax.set_xlim([np.min(xvalues), np.max(xvalues)])
     ax.set_ylim(ylim)
@@ -488,21 +489,22 @@ for plot_index, plot_variables in enumerate([plot_variables_1, plot_variables_2]
 
 ## === T(omega) convergence with respect to ENCUT and dx ===
 ## =========================================================
+data_folder = "data/CsPbI3"
 text_sizes=(13, 15, 16)
-qmesh = 128
+q_mesh_size = 128
 sigma = 0.025
 temperature = 300
 parameter_names = ["a6.276_EDIFF1e-06_disp0.005", "a6.276_EDIFF1e-07_disp0.005",
                    "a6.276_EDIFF1e-08_disp0.005", "a6.276_EDIFF1e-09_disp0.005"]
-legend_entries = ["$\\Delta E=10^{-6}$ eV", "$\\Delta E=10^{-7}$ eV",
-                  "$\\Delta E=10^{-8}$ eV", "$\\Delta E=10^{-9}$ eV"]
+legend_entries = ["$E_{\\text{tol}}=10^{-6}$ eV", "$E_{\\text{tol}}=10^{-7}$ eV",
+                  "$E_{\\text{tol}}=10^{-8}$ eV", "$E_{\\text{tol}}=10^{-9}$ eV"]
 save_name = plots_folder+"Tomega_EDIFF_comparison.pdf"
 fig, ax = plt.subplots()
 plot_handles = []
 omega_max = 0
 Tomega_max = 0
 for index, (params_string, legend_entry) in enumerate(zip(parameter_names, legend_entries)):
-    results_filename = "results/CsPbI3/super222_cutoff01/qmesh"+str(qmesh)+"_sigma"+str(sigma)+"_"+params_string+"_T"+str(temperature)+".npz"
+    results_filename = "results/CsPbI3/super222_cutoff01/qmesh"+str(q_mesh_size)+"_sigma"+str(sigma)+"_"+params_string+"_T"+str(temperature)+".npz"
     if recalculate:  # Recalculate data from scratch
         print("Recalculating T(ω) at T="+str(int(temperature))+"K with σ="+str(sigma)
               +"THz and a "+str(q_mesh_size)+"x"+str(q_mesh_size)+"x"+str(q_mesh_size)+" q-mesh")
