@@ -26,7 +26,7 @@ kB = 1.380649e-23  # Boltzmann constant in J/K
 ### MAIN ARTICLE PLOTS
 recalculate = False  # If False, use precomputed data for the heaviest calculations
 plots_folder = "mobility_plots/"
-color_list = ["#FF4444", "#00BB00", "#4444BB", "#DD9922", "#BB44BB", "#888888"]
+
 
 ## === Brillouin-zone plot ===
 data_folder = "data/CsPbI3"
@@ -45,11 +45,11 @@ label_shifts =  [
                     [ 0.12,  0.00,  0.00],      # R
                     [], [], [], [], []
                 ]
-label_style = dict(color="black", fontsize=14, horizontalalignment='center', 
+label_style = dict(color="black", fontsize=16, horizontalalignment='center', 
                    verticalalignment='center_baseline')
 reciprocal_lattice_vectors = None
-quiver_labels = ["$\\bm{b}_1$", "$\\bm{b}_2$", 
-                 "$\\bm{b}_3, \\bm{\\mathcal{E}}$"]
+quiver_labels = ["$\\mathbf{b}_1$", "$\\mathbf{b}_2$", 
+                 "$\\mathbf{b}_3, \\mathbf{E}$"]
 # quiver_labels = ["$b_1$", "$b_2$", 
 #                  "$b_3, E$"]
 quiver_plot = np.empty((3, 3, 3))
@@ -82,14 +82,15 @@ Eminus_file = common_str+"E-"+str(Efield)+"z_"+supercell_string+".yaml"
 Ezero_file = common_str+"E0.0z_"+supercell_string+".yaml"
 Eplus_file = common_str+"E"+str(Efield)+"z_"+supercell_string+".yaml"
 savefig_filename = plots_folder+"Yplots/CsPbI3_"+supercell_string+cutoff_str+"_"+params_string
-title_string = "$\\sum_{\\nu'} |Y_{\\nu \\nu',z}(\\mathbf{q})|^2$ for CsPbI$_3$"
+#title_string = "$\\sum_{\\nu'} |Y_{\\nu \\nu',z}(\\mathbf{q})|^2$ for CsPbI$_3$"
+title_string = ""
 Y2_unit = "Å²"
 Ycalc = YCalculation([Eminus_file,Ezero_file,Eplus_file], 
                     np.array([-Efield,0.00,Efield]), born_filename=born_file, take_imag=True)
 plot_data = Ycalc.plotY(path, path_labels, include_nac="Gonze", npoints=101, num_markers=151,
                         degenerate_cutoff=1e-3, subplots=None, save_filename=savefig_filename,
                         plot_range=(-1,4), title2=title_string, imaginary_cutoff=imaginary_cutoff,
-                        Y2_sum_norm_value=1e-4, Y2_norm_value=1e-4)
+                        Y2_sum_norm_value=1e-4, Y2_norm_value=1e-4, text_sizes=(14, 16, 18))
 Y2_max = plot_data[0]
 Y2_sum_max = plot_data[1]
 print("Maximum value of |Y|² on the individual plots: "+str(Y2_max)+" "+Y2_unit)
@@ -102,7 +103,7 @@ ax = ax_handles[-1]
 for index in range(len(fig_handles)-1):
     plt.close(fig_handles[index])
 ax2 = ax.twinx()
-color = "#0000FF"
+color = "#0000ff"
 ax2.tick_params(axis='y', labelcolor=color, labelsize=13)
 limits_F = np.array(ax.get_ylim())
 limits_K = limits_F*4.135667696e-3/8.61733262e-5  # convert frequencies in THz to temperatures in K
@@ -111,13 +112,17 @@ ax2.set_yticks([0, 50, 100, 150], labels=["0 K", "50 K", "100 K", "150 K"])
 ytick_values = ax2.get_yticks()
 ytick_labels = list(map(lambda x: str(int(x))+" K", ytick_values))
 ax2.set_yticklabels(ytick_labels)
-ax2.set_ylabel("$\\frac{\\hbar \\omega_{\\mathbf{q},\\nu}}{k_B}$", color=color, fontsize=18,
+ax2.set_ylabel("$\\frac{\\hbar \\omega_{\\mathbf{q},\\nu}}{k_B}$", color=color, fontsize=20,
                rotation=0, ha='left', va='center')
 fig.tight_layout()
 fig.savefig(savefig_filename+".pdf")
 ## ==================
 
 ## === Plot of T(omega) ===
+color_list = ["#2222dd", "#8888ff","#ff8888","#dd2222"]
+color_Romega = "#227722"  # color for R(omega) and the label for it
+color_Rannotations = "#000000"  # color for arrows and text pointing towards R(omega) delta peaks
+color_Tomega = "#dd2222"  # color for the label indicating T(omega)
 data_folder = "data/CsPbI3"
 params_string = "a6.276_EDIFF1e-08_disp0.005"
 Ezero_file = data_folder+"/CsPbI3_"+params_string+"_E0.0z_super222.yaml"
@@ -133,11 +138,10 @@ p2_nus = polarities[relevant_modes]**2
 print("LO phonon frequencies (THz): " + str(omega_nus))
 print("Squared mode polarities ((a.m.u.)^-1): " + str(p2_nus))
 delta_areas = (1.602176634e-19)**2/(2*8.8541878188e-12*(6.24e-10)**3)*(p2_nus/1.66053906892e-27)/(omega_nus*(2*np.pi*1e12)**2)
-annotate_ys = np.array([0.24, 0.22, 0.15])
-arrowprops = dict(arrowstyle="->, head_width=0.1", relpos=(0., 0.5))
 direc = "results/CsPbI3/super222_cutoff01"
 fig, ax = plt.subplots()
 plot_handles = []
+ax.vlines(omega_nus, 0, 0.25, color=color_Romega, linewidth=1.0)
 for index, temperature in enumerate(temperatures):
     results_filename = direc+"/qmesh"+str(q_mesh_size)+"_sigma"+str(sigma)+"_"+params_string+"_T"+str(int(temperature))+".npz"
     if recalculate:  # Recalculate data from scratch
@@ -156,22 +160,25 @@ for index, temperature in enumerate(temperatures):
     calc = TomegaResults(results_filename)
     plot_handle, = ax.plot(calc.omega, calc.Tomega, label="$T="+str(temperature)+"$ K", color = color_list[index])
     plot_handles.append(plot_handle)
-ax.vlines(omega_nus, 0, 0.25, color="black", linewidth=0.7)
-for index, (omega, area, y) in enumerate(zip(omega_nus, delta_areas, annotate_ys)):
+annotate_xydirs = [(0.7, 0.24, "left"), (0.7, 0.22, "left"), (-0.7, 0.15, "right")]  # x-shift, y-coordinate, arrow direction
+arrowprops = dict(arrowstyle="->, head_width=0.1", relpos=(0., 0.5), color=color_Rannotations)
+for index, (omega, area, xydir) in enumerate(zip(omega_nus, delta_areas, annotate_xydirs)):
     areastr = '{0:.1f}'.format(area)
     p2str_full = "Area: $"+areastr+"$ THz"
-    ax.annotate(p2str_full, xy=(omega, y), xytext=(omega+0.7, y),
-                ha="left", va="center",
-                arrowprops=arrowprops, fontsize=12)
+    ax.annotate(p2str_full, xy=(omega, xydir[1]), xytext=(omega+xydir[0], xydir[1]),
+                ha=xydir[2], va="center",
+                arrowprops=arrowprops, fontsize=14, color=color_Rannotations)
+ax.text(4.0, 0.12, "$\\mathcal{R}(\\omega)$", color=color_Romega, fontsize=16)
+ax.text(1.55, 0.12, "$\\mathcal{T}(\\omega)$", color=color_Tomega, fontsize=16)
     
     
-ax.set_xlim([0,8])
+ax.set_xlim([0,6.0])
 ax.set_ylim([0,0.25])
-ax.set_xlabel("Frequency (THz)", fontsize=16)
-ax.set_ylabel("$\\mathcal{P}(\\omega)$", fontsize=16)
-ax.set_title("Electron-phonon spectral function", fontsize=18)
-ax.tick_params(axis='both', which='major', labelsize=13)
-ax.legend(handles=plot_handles, loc="upper right", fontsize=13)
+ax.set_xlabel("Frequency (THz)", fontsize=18)
+ax.set_ylabel("$\\mathcal{P}(\\omega)$", fontsize=18)
+# ax.set_title("Electron-phonon spectral function", fontsize=18)
+ax.tick_params(axis='both', which='major', labelsize=15)
+ax.legend(handles=plot_handles[::-1], loc="upper right", fontsize=14)
 fig.tight_layout()
 fig.savefig(plots_folder+"spectral_function.pdf")
 ## ========================
@@ -248,31 +255,31 @@ def tau2_inv(xs, temperature, directory, params_string):
     return (2/hbar)*e**2/(4*np.pi*epsvac*epsinf**2)*np.sqrt(2*band_mass/hbar) \
         * intgr.simpson(y[:,1:], x[1:], axis=1)
 
+color_list = ["#2222dd","#ff8888","#dd2222"]
 lambda_max = 0.085
 k_max = 2*np.pi*hbar/(lattice_constant*1e-10*np.sqrt(band_mass*kB))*lambda_max
 ks = np.linspace(0, k_max, 201)[1:]
 Ts = [10, 150, 300]
 fig, ax = plt.subplots()
 plot_handles = []
-for index, T in enumerate(Ts):
+for T, color in zip(Ts, color_list):
     legend_entry_1 = "$T="+str(T)+"~K$, 1e1ph"
     legend_entry_12 = "$T="+str(T)+"~K$, 1e1ph+1e2ph"
     tau1_cont = tau_inv(ks**2/T, T)[0]
     tau2_cont = tau2_inv(ks**2/T, T, directory="results/CsPbI3/super222_cutoff01/", params_string=params_string)
     tau_invs = tau1_cont + tau2_cont
-    color = color_list[index]
     plot_handle1, = ax.plot(ks, tau1_cont*1e-12, color=color, label=legend_entry_1)
     plot_handle2, = ax.plot(ks, tau_invs*1e-12, color=color, linestyle="dashed", label=legend_entry_12)
     plot_handles.append(plot_handle1)
     plot_handles.append(plot_handle2)
 ax.set_ylim([0,450])
 ax.set_xlim([0,max(ks)])
-plt.xticks([0, k_max], ["R", str(lambda_max)+"RX"])
-ax.set_xlabel("$\\mathbf{k}$", fontsize=16)
-ax.set_ylabel("$1/\\tau_{\\mathbf{k}}$ (THz)", fontsize=16)
-ax.set_title("Inverse lifetime in CsPbI$_3$", fontsize=18)
-ax.legend(handles=plot_handles, loc="upper right", fontsize=12)
-ax.tick_params(axis='both', which='major', labelsize=13)
+plt.xticks([0, k_max], ["\\textbf{R}", str(lambda_max)+"\\textbf{RX}"])
+ax.set_xlabel("$\\mathbf{k}$", fontsize=18)
+ax.set_ylabel("$1/\\tau_{\\mathbf{k}}$ (THz)", fontsize=18)
+# ax.set_title("Inverse lifetime in CsPbI$_3$", fontsize=18)
+ax.legend(handles=plot_handles[::-1], loc="upper right", fontsize=12)
+ax.tick_params(axis='both', which='major', labelsize=16)
 fig.tight_layout()
 fig.savefig(plots_folder+"inverse_lifetimes.pdf")
 
@@ -345,19 +352,19 @@ power01_string = "{:.2f}".format(result01.slope)
 # Plot 1: Log-log plot between 100K and 500K, saved 3 times to build up during presentations
 # Two basic plots, as well as error range
 fig, ax = plt.subplots()
-plot_handle1, = ax.plot(Ts, mus, color="#8888FF", linewidth=3.0, label="1e1ph")
-plot_handle2, = ax.plot(Ts01, mus01, color="#FF8888", linewidth=3.0, label="1e1ph+1e2ph")
-plot_handle3 = ax.fill_between(Ts005, mus005, mus02, color="#FF5656", alpha=0.3, label="Cutoff 0.05-0.2 THz")
+plot_handle1, = ax.plot(Ts, mus, color="#8888ff", linewidth=3.0, label="1e1ph")
+plot_handle2, = ax.plot(Ts01, mus01, color="#ff8888", linewidth=3.0, label="1e1ph+1e2ph")
+plot_handle3 = ax.fill_between(Ts005, mus005, mus02, color="#ff5656", alpha=0.3, label="Cutoff 0.05-0.2 THz")
 plot_handles = [plot_handle1, plot_handle2, plot_handle3]
 ax.set_ylim([20,150])
 ax.set_xlim([100,500])
 ax.set_xscale("log")
 ax.set_yscale("log")
-ax.set_xlabel("Temperature (K)", fontsize=16)
-ax.set_ylabel("Mobility (cm²/Vs)", fontsize=16)
-ax.set_title("Electron mobility in CsPbI$_3$", fontsize=18)
-ax.legend(handles=plot_handles, loc="upper right", fontsize=14)
-ax.tick_params(axis='both', which='major', labelsize=13)
+ax.set_xlabel("Temperature (K)", fontsize=18)
+ax.set_ylabel("Mobility (cm²/Vs)", fontsize=18)
+#ax.set_title("Electron mobility in CsPbI$_3$", fontsize=20)
+ax.legend(handles=plot_handles, loc="upper right", fontsize=16)
+ax.tick_params(axis='both', which='major', labelsize=15)
 ax.set_xticks([100, 200, 300, 400, 500])
 ax.set_yticks([20, 30, 40, 60, 100, 150])
 ax.get_xaxis().set_major_formatter(mpl.ticker.ScalarFormatter())
@@ -367,8 +374,8 @@ fig.savefig(plots_folder+"mobility_loglog_1.pdf")
 # Relative change inset plot
 ax2 = ax.inset_axes([0.1, 0.13, 0.3, 0.3])
 mus0 = mobility_vec(Ts01)
-plot_handle21, = ax2.plot(Ts01, 1-mus01/mus0, color="#FF8888", linewidth=3)
-plot_handle22 = ax2.fill_between(Ts005, 1-mus005/mus0, 1-mus02/mus0, color="#FF5656", alpha=0.3)
+plot_handle21, = ax2.plot(Ts01, 1-mus01/mus0, color="#ff8888", linewidth=3)
+plot_handle22 = ax2.fill_between(Ts005, 1-mus005/mus0, 1-mus02/mus0, color="#ff5656", alpha=0.3)
 plot_handles = [plot_handle21, plot_handle22]
 ax2.set_ylim([0,0.2])
 ax2.set_xlim([100,500])
@@ -379,25 +386,25 @@ ax2.tick_params(axis='both', which='major', labelsize=11)
 ax2.yaxis.set_major_formatter(mpl.ticker.PercentFormatter(1,0))
 fig.savefig(plots_folder+"mobility_loglog_2.pdf")
 # Add power law fits
-plot_handle4, = ax.plot(Ts, mus0_fit, color=[0.0,0.0,1.0], linestyle="dashed", linewidth=2.0, label="$\\mu \\sim T^{"+power0_string+"}$")
-plot_handle5, = ax.plot(Ts01, mus01_fit, color=[1.0,0.0,0.0], linestyle="dashed", linewidth=2.0, label="$\\mu \\sim T^{"+power01_string+"}$")
+plot_handle4, = ax.plot(Ts, mus0_fit, color="#2222dd", linestyle="dashed", linewidth=2.0, label="$\\mu \\sim T^{"+power0_string+"}$")
+plot_handle5, = ax.plot(Ts01, mus01_fit, color="#dd2222", linestyle="dashed", linewidth=2.0, label="$\\mu \\sim T^{"+power01_string+"}$")
 plot_handles = [plot_handle1, plot_handle2, plot_handle3, plot_handle4, plot_handle5]
-ax.legend(handles=plot_handles, loc="upper right", fontsize=14)
+ax.legend(handles=plot_handles, loc="upper right", fontsize=16)
 fig.savefig(plots_folder+"mobility_loglog_3.pdf")
 
 # Plot 2: Inverse mobility
 fig, ax = plt.subplots()
-plot_handle1, = ax.plot(Ts, 1/mus, color="blue", label="1e1ph")
-plot_handle2, = ax.plot(Ts01, 1/mus01, color="red", label="1e1ph+1e2ph")
-plot_handle3 = ax.fill_between(Ts005, 1/mus005, 1/mus02, color="red", alpha=0.3, label="Cutoff 0.05-0.2 THz")
+plot_handle1, = ax.plot(Ts, 1/mus, color="#2222dd", label="1e1ph")
+plot_handle2, = ax.plot(Ts01, 1/mus01, color="#dd2222", label="1e1ph+1e2ph")
+plot_handle3 = ax.fill_between(Ts005, 1/mus005, 1/mus02, color="#dd2222", alpha=0.3, label="Cutoff 0.05-0.2 THz")
 plot_handles = [plot_handle1, plot_handle2, plot_handle3]
 ax.set_ylim([0,0.05])
 ax.set_xlim([0,max(Ts)])
-ax.set_xlabel("Temperature (K)", fontsize=16)
-ax.set_ylabel("Inverse mobility (V*s/cm²)", fontsize=16)
-ax.set_title("Inverse electron mobility in CsPbI$_3$", fontsize=18)
-ax.legend(handles=plot_handles, loc="upper left", fontsize=14)
-ax.tick_params(axis='both', which='major', labelsize=13)
+ax.set_xlabel("Temperature (K)", fontsize=18)
+ax.set_ylabel("Inverse mobility (V*s/cm²)", fontsize=18)
+ax.set_title("Inverse electron mobility in CsPbI$_3$", fontsize=20)
+ax.legend(handles=plot_handles, loc="upper left", fontsize=16)
+ax.tick_params(axis='both', which='major', labelsize=15)
 fig.tight_layout()
 fig.savefig(plots_folder+"mobility_inverse.pdf")
 
@@ -431,7 +438,7 @@ plot_variables_2 = {
     "y_lim": [1e-2, 1e1],
     "title": "Finite displacement convergence",
     "save_name": plots_folder+"noise_metrics_dx.pdf",
-    "legend_location": "upper right"
+    "legend_location": "upper left"
 }
 
 for plot_index, plot_variables in enumerate([plot_variables_1, plot_variables_2]):
@@ -472,25 +479,27 @@ for plot_index, plot_variables in enumerate([plot_variables_1, plot_variables_2]
     fig, ax = plt.subplots()
     ax.set_xscale("log")
     ax.set_yscale("log")
-    plot_handle1, = ax.plot(xvalues, imag_normalities, label="Imaginary", color=color_list[0], marker="o")
-    plot_handle2, = ax.plot(xvalues, der_normalities, label="Derivative", color=color_list[1], marker="o", linestyle="dashed")
+    plot_handle1, = ax.plot(xvalues, imag_normalities, label="Imaginary", color="#dd2222", marker="o")
+    plot_handle2, = ax.plot(xvalues, der_normalities, label="Derivative", color="#2222dd", marker="o", linestyle="dashed")
     plot_handles = (plot_handle1, plot_handle2)
-    ax.set_title(title, fontsize=16)
-    ax.set_xlabel(xname + " ("+xunit+")", fontsize=13)
-    ax.set_ylabel("Noise metric $\\chi^2$", fontsize=13)
+    # ax.set_title(title, fontsize=18)
+    ax.set_xlabel(xname + " ("+xunit+")", fontsize=15)
+    ax.set_ylabel("Noise metric $\\chi^2$", fontsize=15)
     ax.set_xlim([np.min(xvalues), np.max(xvalues)])
     ax.set_ylim(ylim)
-    ax.tick_params(axis='both', which='major', labelsize=13)
+    ax.tick_params(axis='both', which='major', labelsize=15)
     if plot_index == 1:
         ax.set_xticks([0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001])
         ax.set_xticklabels(["0.01", "", "", "", "", "0.005", "", "0.003", "0.002", "0.001"])
     ax.legend(handles=plot_handles, loc=legend_location, fontsize=14)
+    fig.tight_layout()
     fig.savefig(save_name)
 
 ## === T(omega) convergence with respect to ENCUT and dx ===
 ## =========================================================
+color_list = ["#dd2222","#ff8888", "#8888ff", "#2222dd"]
 data_folder = "data/CsPbI3"
-text_sizes=(13, 15, 16)
+text_sizes=(15, 16, 18)
 q_mesh_size = 128
 sigma = 0.025
 temperature = 300
@@ -525,11 +534,10 @@ for index, (params_string, legend_entry) in enumerate(zip(parameter_names, legen
     plot_handles.append(plot_handle)
 
 ymin, ymax = round_plot_range(0, Tomega_max, clamp_min=0)
-ax.set_title("Convergence of $\\mathcal{T}(\\omega)$, $T=300$K",
-             fontsize=text_sizes[2])
+# ax.set_title("Convergence of $\\mathcal{T}(\\omega)$, $T=300$K", fontsize=text_sizes[2])
 ax.set_xlabel("Frequency (THz)", fontsize=text_sizes[1])
 ax.set_ylabel("$\\mathcal{T}(\\omega)$", fontsize=text_sizes[1])
-ax.set_xlim(0, omega_max)
+ax.set_xlim(0, 6.0)
 ax.set_ylim(ymin, 0.30)
 ax.legend(handles=plot_handles, fontsize=text_sizes[0], loc="upper right")
 ax.tick_params(axis='both', labelsize=text_sizes[0])
@@ -572,7 +580,7 @@ ax = ax_handles[-1]
 for index in range(len(fig_handles)-1):
     plt.close(fig_handles[index])
 ax2 = ax.twinx()
-color = "#0000FF"
+color = "#0000ff"
 ax2.tick_params(axis='y', labelcolor=color, labelsize=13)
 limits_F = np.array(ax.get_ylim())
 limits_K = limits_F*4.135667696e-3/8.61733262e-5  # convert frequencies in THz to temperatures in K
@@ -588,7 +596,11 @@ fig.savefig(savefig_filename+".pdf")
 ## ============================
 
 
-## === Spectral function including SOC ===
+## === Spectral function including SOC, didn't end up making it into the manuscript ===
+color_list = ["#2222dd", "#8888ff","#ff8888","#dd2222"]
+color_Romega = "#227722"  # color for R(omega) and the label for it
+color_Rannotations = "#000000"  # color for arrows and text pointing towards R(omega) delta peaks
+color_Tomega = "#dd2222"  # color for the label indicating T(omega)
 data_folder = "data/CsPbI3-SOC"
 params_string = "a6.276_EDIFF1e-08_disp0.005"
 Ezero_file = data_folder+"/CsPbI3_"+params_string+"_E0.0z_super222.yaml"
@@ -604,11 +616,10 @@ p2_nus = polarities[relevant_modes]**2
 print("LO phonon frequencies (THz): " + str(omega_nus))
 print("Squared mode polarities ((a.m.u.)^-1): " + str(p2_nus))
 delta_areas = (1.602176634e-19)**2/(2*8.8541878188e-12*(6.24e-10)**3)*(p2_nus/1.66053906892e-27)/(omega_nus*(2*np.pi*1e12)**2)
-annotate_ys = np.array([0.24, 0.22, 0.15])
-arrowprops = dict(arrowstyle="->, head_width=0.1", relpos=(0., 0.5))
 direc = "results/CsPbI3-SOC/super222_cutoff01"
 fig, ax = plt.subplots()
 plot_handles = []
+ax.vlines(omega_nus, 0, 0.25, color=color_Romega, linewidth=1.0)
 for index, temperature in enumerate(temperatures):
     results_filename = direc+"/qmesh"+str(q_mesh_size)+"_sigma"+str(sigma)+"_"+params_string+"_T"+str(int(temperature))+".npz"
     if recalculate:  # Recalculate data from scratch
@@ -627,22 +638,24 @@ for index, temperature in enumerate(temperatures):
     calc = TomegaResults(results_filename)
     plot_handle, = ax.plot(calc.omega, calc.Tomega, label="$T="+str(temperature)+"$ K", color = color_list[index])
     plot_handles.append(plot_handle)
-ax.vlines(omega_nus, 0, 0.25, color="black", linewidth=0.7)
-for index, (omega, area, y) in enumerate(zip(omega_nus, delta_areas, annotate_ys)):
+annotate_xydirs = [(0.7, 0.24, "left"), (0.7, 0.22, "left"), (-0.7, 0.15, "right")]  # x-shift, y-coordinate, arrow direction
+arrowprops = dict(arrowstyle="->, head_width=0.1", relpos=(0., 0.5), color=color_Rannotations)
+for index, (omega, area, xydir) in enumerate(zip(omega_nus, delta_areas, annotate_xydirs)):
     areastr = '{0:.1f}'.format(area)
     p2str_full = "Area: $"+areastr+"$ THz"
-    ax.annotate(p2str_full, xy=(omega, y), xytext=(omega+0.7, y),
-                ha="left", va="center",
-                arrowprops=arrowprops, fontsize=12)
+    ax.annotate(p2str_full, xy=(omega, xydir[1]), xytext=(omega+xydir[0], xydir[1]),
+                ha=xydir[2], va="center",
+                arrowprops=arrowprops, fontsize=14, color=color_Rannotations)
+ax.text(4.0, 0.12, "$\\mathcal{R}(\\omega)$", color=color_Romega, fontsize=16)
+ax.text(1.55, 0.12, "$\\mathcal{T}(\\omega)$", color=color_Tomega, fontsize=16)   
     
-    
-ax.set_xlim([0,8])
+ax.set_xlim([0,6.0])
 ax.set_ylim([0,0.25])
-ax.set_xlabel("Frequency (THz)", fontsize=16)
-ax.set_ylabel("$\\mathcal{P}(\\omega)$", fontsize=16)
-ax.set_title("Electron-phonon spectral function with SOC", fontsize=18)
-ax.tick_params(axis='both', which='major', labelsize=13)
-ax.legend(handles=plot_handles, loc="upper right", fontsize=13)
+ax.set_xlabel("Frequency (THz)", fontsize=18)
+ax.set_ylabel("$\\mathcal{P}(\\omega)$", fontsize=18)
+# ax.set_title("Electron-phonon spectral function with SOC", fontsize=20)
+ax.tick_params(axis='both', which='major', labelsize=15)
+ax.legend(handles=plot_handles[::-1], loc="upper right", fontsize=15)
 fig.tight_layout()
 fig.savefig(plots_folder+"spectral_function-SOC.pdf")
 ## =======================================
