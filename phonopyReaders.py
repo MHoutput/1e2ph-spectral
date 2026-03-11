@@ -283,7 +283,7 @@ class PhonopyCalculation:
         if eigenvectors_exist:
             self.eigenvectors = np.empty((self.numqpoints, self.numbands, 
                                           self.natom, self.num_dimensions), 
-                                         dtype=np.complex_)
+                                         dtype=np.complex128)
         else:
             self.eigenvectors = None
         for index, point in enumerate(phonon_props):
@@ -558,7 +558,7 @@ class PhonopyCalculation:
         frequencies_matrices = self.get_frequencies_matrices(unit)
         eigenvectors_matrices = self.get_eigenvectors_matrices(convention)
         dynamical_matrices = np.empty((self.numqpoints, self.numbands, 
-                                       self.numbands), dtype=np.complex_)
+                                       self.numbands), dtype=np.complex128)
         for index, freqs_vecs in enumerate(zip(frequencies_matrices, 
                                                eigenvectors_matrices)):
             freqs_squared = np.sign(freqs_vecs[0])*np.power(freqs_vecs[0], 2)
@@ -968,7 +968,8 @@ class PhonopyCalculation:
         distances = np.cumsum(np.array(distances_to_nearest))
         return qs, distances, xaxis_labels, jump_indices
     
-    def get_Brillouin_boundary(self, reciprocal_lattice_vectors=None):
+    def get_Brillouin_boundary(self, reciprocal_lattice_vectors=None,
+                               determinant_tolerance = 1e-10):
         """ Calculates corners, edges, and planes of the Brillouin zone
 
         Returns the Miller indices of the planes that make up the edge
@@ -984,6 +985,10 @@ class PhonopyCalculation:
         reciprocal_lattice_vectors: np.array of real
             shape (3,3), units of inverse Angstroms
             Default: self.reciprocal_lattice_vectors
+        determinant_tolerance: real
+            Tolerance to determine whether three planes intersect.
+            In most cases it is not necessary to change this tolerance.
+            Default: 1e-10
         
         Returns
         -------
@@ -1035,7 +1040,7 @@ class PhonopyCalculation:
         for G1, G2, G3 in itertools.combinations(accepted_Gscart, 3):  
             # Iterate over all triplets of planes 
             system_matrix = np.array([G1,G2,G3])
-            if np.linalg.det(system_matrix) != 0:
+            if np.abs(np.linalg.det(system_matrix)) >= determinant_tolerance:
                 system_RHS = 0.5*np.linalg.norm(system_matrix, ord=2, axis=1)**2
                 solution = np.linalg.solve(system_matrix, system_RHS)
                 corners.append(solution)
@@ -1788,7 +1793,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         
         # Get the force constants, or its equivalent for the desired quantity
         interpolated_quantities = np.empty((len(q_clean), self.numbands, 
-                                            self.numbands), dtype=np.complex_)     
+                                            self.numbands), dtype=np.complex128)     
         force_constants = self.get_force_constants(quantity=quantity, unit=unit,
                                                    include_nac=include_nac)
         
@@ -1797,7 +1802,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         T_opts = self.optimal_sc_vectors
         fourier_factors = np.zeros((len(q_clean), len(self.get_lpoints()), 
                                     self.numbands, self.numbands), 
-                                   dtype=np.complex_)
+                                   dtype=np.complex128)
         for index2, lpoint in enumerate(self.get_lpoints()):
             for index3, tau_k2 in enumerate(self.get_atom_positions()):
                 for index4, tau_k1 in enumerate(self.get_atom_positions()):
@@ -1984,7 +1989,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         
         match convention:
             case "c-type":
-                dynmats = dynmat_proposal.astype(np.complex_)
+                dynmats = dynmat_proposal.astype(np.complex128)
             case "d-type":
                 dynmats = dynmat_proposal * self.get_c_to_d_factors(q)
             case _:
@@ -2051,7 +2056,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
                                           < 1e-10)[0]:
                     q[zero_index] = 1e-12*nac_q_direction
         dynmats = np.empty((len(q), self.numbands, self.numbands), 
-                           dtype=np.complex_)   
+                           dtype=np.complex128)   
         masses = np.diag(self.get_mass_matrix())
         inv_mass_matrix = 1/np.sqrt(masses.reshape(1, self.numbands)* \
                                     masses.reshape(self.numbands, 1))
@@ -2087,14 +2092,14 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
         tensor_trace = np.sum(np.reshape(np.sum(dyn_nac_Q(Gs_cart), axis=0),
                             (self.numbands,self.natom,self.num_dimensions)), 
                             axis=1)
-        dyn_trace = np.zeros((self.numbands, self.numbands), dtype=np.complex_)
+        dyn_trace = np.zeros((self.numbands, self.numbands), dtype=np.complex128)
         for k in range(self.natom):
             to_slice = slice(self.num_dimensions*k, self.num_dimensions*(k+1), 
                              1)
             dyn_trace[to_slice, to_slice] = tensor_trace[to_slice, :]
         
         dynmat_proposal = np.zeros((len(q), self.numbands, self.numbands), 
-                                   dtype=np.complex_)
+                                   dtype=np.complex128)
         for index, q_point in enumerate(q_cart):
             if np.linalg.norm(q_point) < 1e-10 and no_nac_flag:
                 G0_contribution = 0.
@@ -2167,7 +2172,7 @@ class PhonopyCommensurateCalculation(PhonopyCalculation):
             q_clean = np.array([q_clean])  # Ensure q_clean is a 2D array
         omegas = np.empty((len(q_clean), self.numbands), dtype=float)
         eigvecs = np.empty((len(q_clean), self.numbands, self.numbands), 
-                           dtype=np.complex_)
+                           dtype=np.complex128)
         dynmats = self.fourier_interpolate(q_clean, unit=unit, 
                                            convention=convention, 
                                            include_nac=include_nac)
@@ -3687,9 +3692,9 @@ class YCalculation():
         Y2_sum_max_value: real
             Value of sum_{nu_2} |Y_{nu_1,nu_2}(q)|^2 corresponding
             to the largest marker
-        fig: figure handle
-        ax: axis handle
-        plot_handle: handle to the plot data
+        fig_handles: list of handles to all the figures
+        ax_handles: list of handles to all the axes
+        plot_handle: list of handles to all the plot data
 
         """
 
@@ -3907,6 +3912,9 @@ class YCalculation():
                                        distances[-1]-distances[0], 
                                        -omega_min_scale, fill=True, 
                                        color=(0.8, 0.8, 0.8), zorder=-10))
+        fig_handles.append(fig)
+        ax_handles.append(ax)
+        plot_handles.append(plot_handles_this)
         fig.tight_layout()
         fig.show()
         if save_filename is not None:

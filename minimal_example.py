@@ -20,7 +20,6 @@ mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble']="\\usepackage{bm}"
 mpl.rcParams['hatch.linewidth']=4.0
 
-
 ### PHONON FREQUENCIES
 
 ## Load the supercell calculation
@@ -58,7 +57,6 @@ results = calc2.calculate_Tomega(q_mesh_size = q_mesh_size, sigma = sigma,
                                  q_split_levels = 1, parallel_jobs = 4)
 results.save_npz("test/Tomega_data")
 results.plot(save_filename="test/Tomega_plot")
-
 
 ## Display all the figures
 plt.show()

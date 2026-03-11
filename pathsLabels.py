@@ -23,6 +23,8 @@ def get_path_and_labels(lattice_type, break_z=False):
             - "CUB", simple cubic
             - "FCC", face-centered cubic
             - "BCC", body-centered cubic
+            - "TET", simple tetragonal
+            - "ORC", simple orthorhombic
     break_z: bool
         - True: return high-symmetry path for material with broken
                 z-symmetry (e.g. by an electric field)
@@ -172,9 +174,98 @@ def get_path_and_labels(lattice_type, break_z=False):
                         ]
                 path_labels = ["$\\Gamma$", "H", "N", "$\\Gamma$", "P", "H",
                                "P", "N"]
+        case "TET":
+            # Simple tetragonal lattice
+            if break_z:
+                # Breaking the z-symmetry wouldn't actually do anything.
+                # Here, we break the x- or y-symmetry, which is more useful.
+                path = [                                # TET label | ORC label                       
+                            [                           # ---------------------
+                                [0.0, 0.0, 0.0],        # Gamma     | Gamma
+                                [0.5, 0.0, 0.0],        # X1        | X
+                                [0.5, 0.5, 0.0],        # M         | S
+                                [0.0, 0.5, 0.0],        # X         | Y
+                                [0.0, 0.0, 0.0],        # Gamma     | Gamma
+                                [0.0, 0.0, 0.5],        # Z         | Z
+                                [0.5, 0.0, 0.5],        # R1        | U
+                                [0.5, 0.5, 0.5],        # A         | R
+                                [0.0, 0.5, 0.5],        # R         | T
+                                [0.0, 0.0, 0.5],        # Z         | Z
+                            ],
+                            [
+                                [0.0, 0.5, 0.0],        # X         | Y
+                                [0.0, 0.5, 0.5],        # R         | T
+                            ],
+                            [
+                                [0.5, 0.0, 0.5],        # R1        | U
+                                [0.5, 0.0, 0.0],        # X1        | X
+                            ],
+                            [
+                                [0.5, 0.5, 0.0],        # M         | S
+                                [0.5, 0.5, 0.5],        # A         | R
+                            ]
+                        ]
+                path_labels = ["$\\Gamma$", "X$_1$", "M", "X", "$\\Gamma$", "Z",
+                               "R$_1$", "A", "R", "Z", "X", "R", "R$_1$", "X$_1$",
+                               "M", "A"]
+            else:
+                path = [
+                            [
+                                [0.0, 0.0, 0.0],        # Gamma
+                                [0.0, 0.5, 0.0],        # X
+                                [0.5, 0.5, 0.0],        # M
+                                [0.0, 0.0, 0.0],        # Gamma
+                                [0.0, 0.0, 0.5],        # Z
+                                [0.0, 0.5, 0.5],        # R
+                                [0.5, 0.5, 0.5],        # A
+                                [0.0, 0.0, 0.5],        # Z
+                            ],
+                            [
+                                [0.0, 0.5, 0.0],        # X
+                                [0.0, 0.5, 0.5],        # R
+                            ],
+                            [
+                                [0.5, 0.5, 0.0],        # M
+                                [0.5, 0.5, 0.5],        # A
+                            ]
+                        ]
+                path_labels = ["$\\Gamma$", "X", "M", "$\\Gamma$", "Z", "R",
+                               "A", "Z", "X", "R", "M", "A"]
+        case "ORC":
+            # Simple orthorhombic lattice
+            # The electric field doesn't break any symmetries here,
+            # regardless of the direction. We may simply use the usual path
+            path = [
+                        [
+                            [0.0, 0.0, 0.0],        # Gamma
+                            [0.5, 0.0, 0.0],        # X
+                            [0.5, 0.5, 0.0],        # S
+                            [0.0, 0.5, 0.0],        # Y
+                            [0.0, 0.0, 0.0],        # Gamma
+                            [0.0, 0.0, 0.5],        # Z
+                            [0.5, 0.0, 0.5],        # U
+                            [0.5, 0.5, 0.5],        # R
+                            [0.0, 0.5, 0.5],        # T
+                            [0.0, 0.0, 0.5],        # Z
+                        ],
+                        [
+                            [0.0, 0.5, 0.0],        # Y
+                            [0.0, 0.5, 0.5],        # T
+                        ],
+                        [
+                            [0.5, 0.0, 0.5],        # U
+                            [0.5, 0.0, 0.0],        # X
+                        ],
+                        [
+                            [0.5, 0.5, 0.0],        # S
+                            [0.5, 0.5, 0.5],        # R
+                        ]
+                    ]
+            path_labels = ["$\\Gamma$", "X", "S", "Y", "$\\Gamma$", "Z", "U",
+                            "R", "T", "Z", "Y", "T", "U", "X", "S", "R"]
         case _:
             raise NameError(("Unknown lattice_type '"+str(lattice_type)+"': \n"
                              "please choose from the implemented list \n" 
-                             "{'CUB', 'FCC', 'BCC'}"))
+                             "{'CUB', 'FCC', 'BCC', 'TET', 'ORC'}"))
     return path, path_labels
             
