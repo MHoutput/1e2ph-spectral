@@ -3812,7 +3812,7 @@ class YCalculation():
             fig, axs = plt.subplots(subplots[0], subplots[1], sharex=shareaxes,
                                     sharey=shareaxes, figsize=figsize)
             fig_handles = [fig]
-            ax_handles = axs.flat
+            ax_handles = axs.flatten().tolist()
         plot_handles = []
         
         if plot_range is None:

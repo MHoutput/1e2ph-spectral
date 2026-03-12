@@ -115,7 +115,7 @@ ax2.set_yticklabels(ytick_labels)
 ax2.set_ylabel("$\\frac{\\hbar \\omega_{\\mathbf{q},\\nu}}{k_B}$", color=color, fontsize=20,
                rotation=0, ha='left', va='center')
 fig.tight_layout()
-fig.savefig(savefig_filename+".pdf")
+fig.savefig(plots_folder+"Yplot_summed.pdf")
 ## ==================
 
 ## === Plot of T(omega) ===
@@ -592,7 +592,7 @@ ax2.set_yticklabels(ytick_labels)
 ax2.set_ylabel("$\\frac{\\hbar \\omega_{\\mathbf{q},\\nu}}{k_B}$", color=color, fontsize=18,
                rotation=0, ha='left', va='center')
 fig.tight_layout()
-fig.savefig(savefig_filename+".pdf")
+fig.savefig(plots_folder+"Yplot_summed-SOC.pdf")
 ## ============================
 
 
