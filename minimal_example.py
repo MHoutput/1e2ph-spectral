@@ -45,7 +45,7 @@ calc2 = YCalculation(yaml_filenames, Efields, born_filename, take_imag=True)
 
 ## Make a plot of |Y_{nu,nu',z}|^2
 path2, path_labels2 = get_path_and_labels("FCC", break_z=True)
-calc2.plotY(path2, path_labels2, include_nac="Gonze", subplots=(2,3),
+calc2.plotY(path2, path_labels2, include_nac="Gonze", subplots=None,
             save_filename = "test/Yplot")
 
 ## Calculate the 1-electron-2-phonon spectral function

@@ -212,7 +212,7 @@ if recalculate:  # Recalculate data from scratch
 
 ## === Plot of the inverse lifetimes ===
 ## =====================================
-data_folder = "choose_data/CsPbI3_alpha/GWpotcars_PBEex"
+data_folder = "data/CsPbI3"
 calc_params_string = "a6.276_EDIFF1e-08_disp0.005"
 Ezero_file = data_folder+"/CsPbI3_"+calc_params_string+"_E0.0z_super222.yaml"
 born_file = data_folder+"/BORN_CsPbI3_"+calc_params_string+".txt"
