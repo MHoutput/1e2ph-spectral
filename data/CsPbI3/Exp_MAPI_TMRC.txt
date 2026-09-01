@@ -1,0 +1,11 @@
+# Time-Resolved Microwave Conductivity mobility in thin film MAPbI3
+# From: Eline M. Hutter, Tom J. Savenije; ACS Energy Lett. 14 September 2018; 3 (9): 2068–2069. https://doi.org/10.1021/acsenergylett.8b01106
+Temperature (K)		Mobility (cm²/Vs)
+140.33989266547405	80.625
+150.26833631484794	75.625
+160.19677996422183	72.03125
+180.32200357781755	75.78125
+220.57245080500897	55.625
+260.5545617173524	52.03125
+300.5366726296959	42.03125
+

@@ -1,0 +1,5 @@
+# Optical pump mobility in thin film CsPbI3
+# From: Heng Zhang, et al.; ACS Energy Lett. 12 February 2021; 6 (2): 568–573. https://doi.org/10.1021/acsenergylett.0c02482
+Temperature (K)		Mobility (cm²/Vs)
+286.280487804878	270
+

@@ -1,0 +1,21 @@
+# Optical pump mobility in MAPbI3
+# From: R.L. Milot et al., Adv. Funct. Mater. 25: 6218-6227 (2015). DOI: 10.1002/adfm.201502340
+# Supplementary Information, table S1
+Temperature (K)		Mobility (cm²/Vs)
+40			321
+80			143
+120			62
+140			40
+160			52
+180			44
+205			41
+230			39
+265			26
+295			35
+310			24
+320			24
+330			19
+340			16
+355			15
+370			15
+
