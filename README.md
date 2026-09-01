@@ -8,6 +8,7 @@ PhonoPy postprocessing code to calculate the 1-electron-2-phonon spectral functi
 - numpy
 - scipy
 - matplotlib
+- pymatgen
 - pyyaml
 - joblib
 - itertools
